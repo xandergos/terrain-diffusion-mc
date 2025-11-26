@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "terrain-diffusion-mc",
+  "version": "${version}",
+  "name": "terrain-diffusion-mc",
+  "description": "Terrain Diffusion in Minecraft",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/terrain-diffusion-mc/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "com.github.xandergos.terraindiffusionmc.client.TerrainDiffusionMcDataGenerator"
+    ],
+    "client": [
+      "com.github.xandergos.terraindiffusionmc.client.TerrainDiffusionMcClient"
+    ],
+    "main": [
+      "com.github.xandergos.terraindiffusionmc.TerrainDiffusionMc"
+    ]
+  },
+  "mixins": [
+    "terrain-diffusion-mc.mixins.json",
+    {
+      "config": "terrain-diffusion-mc.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

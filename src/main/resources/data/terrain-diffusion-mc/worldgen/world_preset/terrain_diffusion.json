@@ -1,0 +1,37 @@
+{
+  "dimensions": {
+    "minecraft:overworld": {
+      "type": "terrain-diffusion-mc:terrain_diffusion",
+      "generator": {
+        "type": "minecraft:noise",
+        "settings": "terrain-diffusion-mc:terrain_diffusion",
+        "biome_source": {
+          "type": "terrain-diffusion-mc:terrain_diffusion",
+          "api_url": "http://localhost:8000"
+        }
+      }
+    },
+    "minecraft:the_nether": {
+      "type": "minecraft:the_nether",
+      "generator": {
+        "type": "minecraft:noise",
+        "settings": "minecraft:nether",
+        "biome_source": {
+          "type": "minecraft:multi_noise",
+          "preset": "minecraft:nether"
+        }
+      }
+    },
+    "minecraft:the_end": {
+      "type": "minecraft:the_end",
+      "generator": {
+        "type": "minecraft:noise",
+        "settings": "minecraft:end",
+        "biome_source": {
+          "type": "minecraft:the_end"
+        }
+      }
+    }
+  }
+}
+
