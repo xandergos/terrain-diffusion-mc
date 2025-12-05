@@ -8,9 +8,11 @@ import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import net.minecraft.registry.RegistryEntryLookup;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.RegistryOps;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.random.Random;
 import net.minecraft.world.WorldView;
@@ -30,6 +32,10 @@ import static java.util.Map.entry;
 public class TerrainDiffusionBiomeSource extends BiomeSource {
     private static final int TILE_SHIFT = 8; // 256 blocks
     private static final int TILE_SIZE = 1 << TILE_SHIFT;
+
+    private static final RegistryKey<Biome> FOREST_SPARSE = RegistryKey.of(RegistryKeys.BIOME, Identifier.of("terrain-diffusion-mc", "forest_sparse"));
+    private static final RegistryKey<Biome> TAIGA_SPARSE = RegistryKey.of(RegistryKeys.BIOME, Identifier.of("terrain-diffusion-mc", "taiga_sparse"));
+    private static final RegistryKey<Biome> SNOWY_TAIGA_SPARSE = RegistryKey.of(RegistryKeys.BIOME, Identifier.of("terrain-diffusion-mc", "snowy_taiga_sparse"));
 
     public static final MapCodec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.mapCodec((instance) ->
             instance.group(
@@ -76,7 +82,10 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
                     entry((short) 41, this.biomeLookup.getOrThrow(BiomeKeys.WARM_OCEAN)),
                     entry((short) 44, this.biomeLookup.getOrThrow(BiomeKeys.OCEAN)),
                     entry((short) 46, this.biomeLookup.getOrThrow(BiomeKeys.COLD_OCEAN)),
-                    entry((short) 48, this.biomeLookup.getOrThrow(BiomeKeys.FROZEN_OCEAN))
+                    entry((short) 48, this.biomeLookup.getOrThrow(BiomeKeys.FROZEN_OCEAN)),
+                    entry((short) 108, this.biomeLookup.getOrThrow(FOREST_SPARSE)),
+                    entry((short) 115, this.biomeLookup.getOrThrow(TAIGA_SPARSE)),
+                    entry((short) 116, this.biomeLookup.getOrThrow(SNOWY_TAIGA_SPARSE))
             );
         }
     }

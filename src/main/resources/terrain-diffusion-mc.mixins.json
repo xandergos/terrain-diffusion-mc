@@ -4,6 +4,7 @@
   "package": "com.github.xandergos.terraindiffusionmc.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "BiomeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

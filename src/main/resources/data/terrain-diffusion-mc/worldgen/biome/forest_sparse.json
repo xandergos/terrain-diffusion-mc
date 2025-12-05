@@ -4,7 +4,7 @@
     "minecraft:cave_extra_underground",
     "minecraft:canyon"
   ],
-  "downfall": 0.4,
+  "downfall": 0.8,
   "effects": {
     "fog_color": 12638463,
     "mood_sound": {
@@ -13,8 +13,19 @@
       "sound": "minecraft:ambient.cave",
       "tick_delay": 6000
     },
+    "music": [
+      {
+        "data": {
+          "max_delay": 24000,
+          "min_delay": 12000,
+          "replace_current_music": false,
+          "sound": "minecraft:music.overworld.forest"
+        },
+        "weight": 1
+      }
+    ],
     "music_volume": 1.0,
-    "sky_color": 7907327,
+    "sky_color": 7972607,
     "water_color": 4159204,
     "water_fog_color": 329011
   },
@@ -71,8 +82,11 @@
     ],
     [
       "minecraft:glow_lichen",
+      "minecraft:forest_flowers",
+      "terrain-diffusion-mc:trees_birch_and_oak_sparse",
+      "minecraft:patch_bush",
       "minecraft:flower_default",
-      "minecraft:patch_grass_badlands",
+      "minecraft:patch_grass_forest",
       "minecraft:brown_mushroom_normal",
       "minecraft:red_mushroom_normal",
       "minecraft:patch_pumpkin",
@@ -97,9 +111,33 @@
     "axolotls": [],
     "creature": [
       {
-        "type": "minecraft:turtle",
-        "maxCount": 5,
-        "minCount": 2,
+        "type": "minecraft:sheep",
+        "maxCount": 4,
+        "minCount": 4,
+        "weight": 12
+      },
+      {
+        "type": "minecraft:pig",
+        "maxCount": 4,
+        "minCount": 4,
+        "weight": 10
+      },
+      {
+        "type": "minecraft:chicken",
+        "maxCount": 4,
+        "minCount": 4,
+        "weight": 10
+      },
+      {
+        "type": "minecraft:cow",
+        "maxCount": 4,
+        "minCount": 4,
+        "weight": 8
+      },
+      {
+        "type": "minecraft:wolf",
+        "maxCount": 4,
+        "minCount": 4,
         "weight": 5
       }
     ],
@@ -165,5 +203,5 @@
     "water_ambient": [],
     "water_creature": []
   },
-  "temperature": 2.0
+  "temperature": 0.7
 }
