@@ -5,9 +5,11 @@ The mod works purely server-side so can be used on servers if desired. The mod r
 
 **This is a research preview**. I cannot guarantee continued maintanence of the mod, but I am happy to support future mod developers.
 
+You need [Python](https://www.python.org/downloads/) and [git](https://git-scm.com/) installed.
+
 ## Installation
 
-1. Begin by installing the Terrain Diffusion backend:
+1. Install the Terrain Diffusion backend:
 
 ```
 git clone https://github.com/xandergos/terrain-diffusion
@@ -15,22 +17,53 @@ cd terrain-diffusion
 pip install -r requirements.txt
 ```
 
-2. Optionally (but strongly recommended), install PyTorch with CUDA if you have an NVIDIA GPU available. Make sure you have recent NVIDIA drivers installed.
+2. For the best performance, install PyTorch with CUDA if you have an NVIDIA GPU.
 
 ```
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
-3. Now run the Terrain Diffusion API.
+## Using Terrain Diffusion
 
+Terrain Diffusion has two main tools:
+
+1. **mc-api** generates the actual world for Minecraft and writes a file called `world.h5`. This file stores cached terrain plus all parameters you used.
+
+2. **explorer** is a separate viewer for exploring the same world, but it cannot open `world.h5` directly because HDF5 only allows one writer at a time. Instead, explorer needs a temporary file plus exactly the same parameters you used with mc-api, including the seed.
+
+If you forget the seed, it was printed in the mc-api console when you ran it.
+
+Explorer then opens a two-panel GUI. Click anywhere on the left panel to zoom into an area. The exact coordinates you clicked appear in the console.
+
+## Generating a World for Minecraft
+
+Run the API:
 ```
 python -m terrain_diffusion mc-api
 ```
 
-That's it. The actual Fabric mod is available in the [releases](https://github.com/xandergos/terrain-diffusion-mc/releases) section. Make sure the Minecraft version's match up.
+The defaults already give realistic terrain. For my favorite setting, which is a good mix between realism and intensity, try:
+```
+python -m terrain_diffusion mc-api --kwarg coarse_pooling=2
+```
+My favorite find so far uses these settings with `--seed 599419348` at x=1000, z=28500.
+
+The actual Fabric mod is available in the [releases](https://github.com/xandergos/terrain-diffusion-mc/releases) section. Make sure the Minecraft version's match up.
 
 If you know how to code in Python, you can modify Terrain Diffusion's source code at `terrain_diffusion/inference/minecraft_api.py` 
 to directly change how the world/biomes are generated.
+
+## Previewing the World
+
+Use explorer to scout continents, mountains, islands, and interesting terrain before entering Minecraft.
+
+Since `world.h5` is locked for writing by `mc-api`, explorer uses its own temporary file. To ensure you see the same world, you must pass the exact same arguments and seed you used for `mc-api`.
+
+Example:
+```
+python -m terrain_diffusion explorer --hdf5-file TEMP  --kwarg coarse_pooling=2 --seed 599419348
+```
+Explorer opens a GUI with two panels. The left panel shows a global view. Click anywhere to zoom in. The console prints the coordinates you clicked.
 
 ## Configuration
 
