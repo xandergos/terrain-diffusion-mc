@@ -119,5 +119,4 @@ runs/
 !gradle-wrapper.jar
 
 bin/
-gradle/
 .history/
