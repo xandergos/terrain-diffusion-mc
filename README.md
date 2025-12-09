@@ -1,9 +1,9 @@
 # Terrain Diffusion Fabric Mod
 
 This is a Minecraft Fabric mod for integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion). 
-The mod works purely server-side so can be used on servers if desired. The mod requires the Terrain Diffusion Minecraft API to be running in the backgroumd. See instructions below.
+The mod works purely server-side so can be used on servers if desired. The mod requires the Terrain Diffusion Minecraft API to be running in the background. See instructions below.
 
-**This is a research preview**. I cannot guarantee continued maintanence of the mod, but I am happy to support future mod developers.
+**This is a research preview**. I cannot guarantee continued maintanence of the mod, but I am happy to support mod developers.
 
 ## Installation
 
