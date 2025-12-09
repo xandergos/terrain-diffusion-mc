@@ -9,12 +9,21 @@ import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class HeightmapApiClient {
     private static final String DEFAULT_API_URL = "http://localhost:8000";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(600);
-    private static final java.util.Map<String, CompletableFuture<HeightmapData>> CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int MAX_CACHE_SIZE = 256;
+    private static final Map<String, CompletableFuture<HeightmapData>> CACHE =
+            java.util.Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, CompletableFuture<HeightmapData>> eldest) {
+                    return size() > MAX_CACHE_SIZE;
+                }
+            });
     public static final int ENDPOINT_RESOLUTION = TerrainDiffusionConfig.endpointResolution();
 
     private final HttpClient httpClient;
@@ -31,9 +40,21 @@ public class HeightmapApiClient {
                 .build();
     }
     
+    public static void clearCache() {
+        synchronized (CACHE) {
+            CACHE.clear();
+        }
+    }
+    
     public CompletableFuture<HeightmapData> fetchHeightmap(int i1, int j1, int i2, int j2) {
         String cacheKey = i1 + "," + j1 + "," + i2 + "," + j2;
-        return CACHE.computeIfAbsent(cacheKey, k -> {
+        
+        synchronized (CACHE) {
+            CompletableFuture<HeightmapData> cached = CACHE.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+            
             String url = String.format("%s/%d?i1=%d&j1=%d&i2=%d&j2=%d", apiBaseUrl, ENDPOINT_RESOLUTION, i1, j1, i2, j2);
             
             HttpRequest request = HttpRequest.newBuilder()
@@ -42,7 +63,7 @@ public class HeightmapApiClient {
                     .GET()
                     .build();
             
-            return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+            CompletableFuture<HeightmapData> future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                     .thenApply(response -> {
                         if (response.statusCode() != 200) {
                             throw new RuntimeException("API request failed with status: " + response.statusCode() + 
@@ -79,10 +100,15 @@ public class HeightmapApiClient {
                     .exceptionally(throwable -> {
                         System.err.println("Failed to fetch heightmap: " + throwable.getMessage());
                         throwable.printStackTrace();
-                        CACHE.remove(cacheKey); // Remove failed request from cache
+                        synchronized (CACHE) {
+                            CACHE.remove(cacheKey);
+                        }
                         return null;
                     });
-        });
+            
+            CACHE.put(cacheKey, future);
+            return future;
+        }
     }
     
     private short[][] parseInt16Array(byte[] data, int width, int height, int offset) {
