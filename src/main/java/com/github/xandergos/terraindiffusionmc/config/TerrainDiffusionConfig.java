@@ -18,6 +18,7 @@ public final class TerrainDiffusionConfig {
     private static final float DEFAULT_GAMMA = 1.0f;
     private static final float DEFAULT_C = 30.0f;
     private static final int DEFAULT_ENDPOINT = 11;
+    private static final String DEFAULT_API_URL = "http://localhost:8000";
 
     static {
         loadDefaults();
@@ -46,6 +47,10 @@ public final class TerrainDiffusionConfig {
         return readInt("heightmap_api.endpoint", DEFAULT_ENDPOINT);
     }
 
+    public static String apiUrl() {
+        return PROPERTIES.getProperty("heightmap_api.url", DEFAULT_API_URL);
+    }
+
     private static void loadDefaults() {
         boolean loadedFromResource = false;
         try (InputStream in = TerrainDiffusionConfig.class.getResourceAsStream(RESOURCE_PATH)) {
@@ -60,6 +65,7 @@ public final class TerrainDiffusionConfig {
         if (!loadedFromResource) {
             PROPERTIES.setProperty("height_converter.resolution", String.valueOf(DEFAULT_RESOLUTION));
             PROPERTIES.setProperty("heightmap_api.endpoint", String.valueOf(DEFAULT_ENDPOINT));
+            PROPERTIES.setProperty("heightmap_api.url", DEFAULT_API_URL);
             PROPERTIES.setProperty("height_converter.gamma", String.valueOf(DEFAULT_GAMMA));
             PROPERTIES.setProperty("height_converter.c", String.valueOf(DEFAULT_C));
         }

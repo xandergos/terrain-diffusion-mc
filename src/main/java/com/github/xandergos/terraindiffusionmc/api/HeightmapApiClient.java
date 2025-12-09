@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 public class HeightmapApiClient {
-    private static final String DEFAULT_API_URL = "http://localhost:8000";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(600);
     private static final int MAX_CACHE_SIZE = 256;
     private static final Map<String, CompletableFuture<HeightmapData>> CACHE =
@@ -30,7 +29,7 @@ public class HeightmapApiClient {
     private final String apiBaseUrl;
     
     public HeightmapApiClient() {
-        this(System.getProperty("terrain.api.url", DEFAULT_API_URL));
+        this(TerrainDiffusionConfig.apiUrl());
     }
     
     public HeightmapApiClient(String apiBaseUrl) {
