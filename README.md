@@ -37,8 +37,6 @@ Terrain Diffusion has two main tools:
 
 You will need to ensure you use the same options for both, so the worlds match up. If you need the seed, it is printed in the console.
 
-Explorer then opens a two-panel GUI. Click anywhere on the left panel to zoom into an area. The exact coordinates you clicked appear in the console.
-
 ## Generating a World for Minecraft
 
 Run the API:
