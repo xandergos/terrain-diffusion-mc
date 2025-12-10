@@ -39,7 +39,7 @@ Terrain Diffusion has two main tools:
 
 2. **explorer** is a separate viewer for exploring worlds.
 
-You will need to ensure you use the same options for both, so the worlds match up. If you need the seed, it is printed in the console.
+You will need to ensure you use the same options for both, so the worlds match up. If you need the seed, it is printed in the console after running either command.
 
 ## Generating a World for Minecraft
 
