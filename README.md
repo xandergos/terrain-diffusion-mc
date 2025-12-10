@@ -5,6 +5,10 @@ The mod works purely server-side so can be used on servers if desired. The mod r
 
 **This is a research preview**. I cannot guarantee continued maintanence of the mod, but I am happy to support mod developers.
 
+## Requirements:
+- Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed.
+- Python and Git
+
 ## Installation
 
 1. Install the mod
