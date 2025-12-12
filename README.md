@@ -61,7 +61,7 @@ Use explorer to scout continents, mountains, islands, and interesting terrain be
 
 Example:
 ```
-python -m terrain_diffusion explorer --seed <YOUR_SEED> --kwarg coarse_pooling=2
+python -m terrain_diffusion explore --seed <YOUR_SEED> --kwarg coarse_pooling=2
 ```
 
 Explorer opens a GUI with two panels. The left panel shows a global view. Click anywhere to zoom in. The console prints the coordinates you clicked at various resolutions.
