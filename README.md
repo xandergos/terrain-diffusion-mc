@@ -3,7 +3,7 @@
 This is a Minecraft Fabric mod for integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion). 
 The mod works purely server-side so can be used on servers if desired. The mod requires the Terrain Diffusion Minecraft API to be running in the background. See instructions below.
 
-**This is a research preview**. I cannot guarantee continued maintanence of the mod, but I am happy to support mod developers.
+This is a research preview. I cannot guarantee continued maintanence of the mod, but I am happy to support mod developers.
 
 ## Requirements:
 - Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed.
@@ -54,6 +54,8 @@ python -m terrain_diffusion mc-api xandergos/terrain-diffusion-30m --seed <YOUR_
 ```
 python -m terrain_diffusion mc-api xandergos/terrain-diffusion-90m --seed <YOUR_SEED>
 ```
+
+Note that because of the new resolution you will need to update the mod config.
 
 ## Previewing the World
 
