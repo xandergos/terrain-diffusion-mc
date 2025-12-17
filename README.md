@@ -47,12 +47,12 @@ You will need to ensure you use the same options for both, so the worlds match u
 
 Run the API:
 ```
-python -m terrain_diffusion mc-api --seed <YOUR_SEED>
+python -m terrain_diffusion mc-api xandergos/terrain-diffusion-30m --seed <YOUR_SEED>
 ```
 
-The defaults already give realistic terrain. For more variation, I recommend trying:
+30m is recommended for gameplay (practically and visually). If you want to replicate the paper:
 ```
-python -m terrain_diffusion mc-api --seed <YOUR_SEED> --kwarg coarse_pooling=2
+python -m terrain_diffusion mc-api xandergos/terrain-diffusion-90m --seed <YOUR_SEED>
 ```
 
 ## Previewing the World
@@ -61,7 +61,7 @@ Use explorer to scout continents, mountains, islands, and interesting terrain be
 
 Example:
 ```
-python -m terrain_diffusion explore --seed <YOUR_SEED> --kwarg coarse_pooling=2
+python -m terrain_diffusion explore xandergos/terrain-diffusion-30m --seed <YOUR_SEED>
 ```
 
 Explorer opens a GUI with two panels. The left panel shows a global view. Click anywhere to zoom in. The console prints the coordinates you clicked at various resolutions.
