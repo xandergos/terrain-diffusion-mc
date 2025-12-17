@@ -92,9 +92,6 @@ heightmap_api.noise=1.0
 # Base URL of the heightmap API server.
 heightmap_api.url=http://localhost:8000
 
-# Base URL of the heightmap API server.
-heightmap_api.url=http://localhost:8000
-
 # ADVANCED
 # Gamma and c of terrain (Mod applies elev -> ((elev + c)^gamma - c^gamma) before scaling down by `height_converter.resolution`)
 # I tried experimenting with this to boost low-elevation relief, but didn't really see any improvements. Maybe I missed something. Note that this changes the scale of the elevation, so `height_converter.resolution`
