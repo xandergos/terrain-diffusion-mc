@@ -14,10 +14,11 @@ public final class TerrainDiffusionConfig {
     private static final String FILE_NAME = "terrain-diffusion-mc.properties";
     private static final String RESOURCE_PATH = "/" + FILE_NAME;
     private static final Properties PROPERTIES = new Properties();
-    private static final float DEFAULT_RESOLUTION = 10f;
+    private static final float DEFAULT_RESOLUTION = 30f;
     private static final float DEFAULT_GAMMA = 1.0f;
     private static final float DEFAULT_C = 30.0f;
-    private static final int DEFAULT_ENDPOINT = 11;
+    private static final int DEFAULT_SCALE = 2;
+    private static final float DEFAULT_NOISE = 1.0f;
     private static final String DEFAULT_API_URL = "http://localhost:8000";
 
     static {
@@ -32,7 +33,7 @@ public final class TerrainDiffusionConfig {
     }
 
     public static float heightConverterResolution() {
-        return readFloat("height_converter.resolution", DEFAULT_RESOLUTION);
+        return readFloat("height_converter.resolution", DEFAULT_RESOLUTION) / scale();
     }
 
     public static float heightConverterGamma() {
@@ -43,8 +44,12 @@ public final class TerrainDiffusionConfig {
         return readFloat("height_converter.c", DEFAULT_C);
     }
 
-    public static int endpointResolution() {
-        return readInt("heightmap_api.endpoint", DEFAULT_ENDPOINT);
+    public static int scale() {
+        return readInt("heightmap_api.scale", DEFAULT_SCALE);
+    }
+
+    public static float noise() {
+        return readFloat("heightmap_api.noise", DEFAULT_NOISE);
     }
 
     public static String apiUrl() {
@@ -64,7 +69,7 @@ public final class TerrainDiffusionConfig {
 
         if (!loadedFromResource) {
             PROPERTIES.setProperty("height_converter.resolution", String.valueOf(DEFAULT_RESOLUTION));
-            PROPERTIES.setProperty("heightmap_api.endpoint", String.valueOf(DEFAULT_ENDPOINT));
+            PROPERTIES.setProperty("heightmap_api.scale", String.valueOf(DEFAULT_SCALE));
             PROPERTIES.setProperty("heightmap_api.url", DEFAULT_API_URL);
             PROPERTIES.setProperty("height_converter.gamma", String.valueOf(DEFAULT_GAMMA));
             PROPERTIES.setProperty("height_converter.c", String.valueOf(DEFAULT_C));
