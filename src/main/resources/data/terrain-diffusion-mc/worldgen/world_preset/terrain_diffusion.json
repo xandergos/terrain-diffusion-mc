@@ -6,8 +6,7 @@
         "type": "minecraft:noise",
         "settings": "terrain-diffusion-mc:terrain_diffusion",
         "biome_source": {
-          "type": "terrain-diffusion-mc:terrain_diffusion",
-          "api_url": "http://localhost:8000"
+          "type": "terrain-diffusion-mc:terrain_diffusion"
         }
       }
     },

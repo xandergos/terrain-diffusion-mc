@@ -27,7 +27,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
 
     public TerrainDiffusionDensityFunction(String apiUrl) {
         this.apiUrl = apiUrl;
-        this.apiClient = new HeightmapApiClient(apiUrl);
+        this.apiClient = new HeightmapApiClient();
     }
 
     @Override

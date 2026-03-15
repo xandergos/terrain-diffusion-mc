@@ -39,19 +39,16 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
 
     public static final MapCodec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.mapCodec((instance) ->
             instance.group(
-                    Codec.STRING.fieldOf("api_url").orElse("http://localhost:8000").forGetter((TerrainDiffusionBiomeSource source) -> source.apiUrl),
                     RegistryOps.getEntryLookupCodec(RegistryKeys.BIOME)
             ).apply(instance, instance.stable(TerrainDiffusionBiomeSource::new)));
 
 
     private RegistryEntryLookup<Biome> biomeLookup;
     private Map<Short, RegistryEntry<Biome>> biomeIdMap = null;
-    private final String apiUrl;
     private final HeightmapApiClient apiClient;
 
-    public TerrainDiffusionBiomeSource(String apiUrl, RegistryEntryLookup<Biome> biomeLookup) {
-        this.apiUrl = apiUrl;
-        this.apiClient = new HeightmapApiClient(apiUrl);
+    public TerrainDiffusionBiomeSource(RegistryEntryLookup<Biome> biomeLookup) {
+        this.apiClient = new HeightmapApiClient();
         this.biomeLookup = biomeLookup;
     }
 

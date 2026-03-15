@@ -5,9 +5,11 @@ import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionDensityFunction;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
+import net.minecraft.world.World;
 
 public class TerrainDiffusionMc implements ModInitializer {
     public static final String MOD_ID = "terrain-diffusion-mc";
@@ -19,6 +21,12 @@ public class TerrainDiffusionMc implements ModInitializer {
         
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             HeightmapApiClient.clearCache();
+        });
+
+        ServerWorldEvents.LOAD.register((server, world) -> {
+            if (world.getRegistryKey() == World.OVERWORLD) {
+                HeightmapApiClient.setSeed(world.getSeed());
+            }
         });
     }
 }

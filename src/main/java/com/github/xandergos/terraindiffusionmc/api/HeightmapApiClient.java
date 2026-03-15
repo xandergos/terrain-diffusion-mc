@@ -24,15 +24,13 @@ public class HeightmapApiClient {
                 }
             });
 
+    private static long currentSeed = 0;
+
     private final HttpClient httpClient;
     private final String apiBaseUrl;
     
     public HeightmapApiClient() {
-        this(TerrainDiffusionConfig.apiUrl());
-    }
-    
-    public HeightmapApiClient(String apiBaseUrl) {
-        this.apiBaseUrl = apiBaseUrl;
+        this.apiBaseUrl = TerrainDiffusionConfig.apiUrl();
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(300))
                 .build();
@@ -43,9 +41,13 @@ public class HeightmapApiClient {
             CACHE.clear();
         }
     }
+
+    public static void setSeed(long seed) {
+        currentSeed = seed;
+    }
     
     public CompletableFuture<HeightmapData> fetchHeightmap(int i1, int j1, int i2, int j2) {
-        String cacheKey = i1 + "," + j1 + "," + i2 + "," + j2;
+        String cacheKey = i1 + "," + j1 + "," + i2 + "," + j2 + "," + currentSeed;
         
         synchronized (CACHE) {
             CompletableFuture<HeightmapData> cached = CACHE.get(cacheKey);
@@ -56,8 +58,8 @@ public class HeightmapApiClient {
         
         int scale = TerrainDiffusionConfig.scale();
         float noise = TerrainDiffusionConfig.noise();
-        String url = String.format("%s/terrain?i1=%d&j1=%d&i2=%d&j2=%d&scale=%d&noise=%s",
-                apiBaseUrl, i1, j1, i2, j2, scale, noise);
+        String url = String.format("%s/terrain?i1=%d&j1=%d&i2=%d&j2=%d&scale=%d&noise=%s&seed=%d",
+                apiBaseUrl, i1, j1, i2, j2, scale, noise, currentSeed);
             
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
