@@ -4,6 +4,7 @@ plugins {
 }
 
 def useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
+def withSourcesJar = project.hasProperty('withSourcesJar') && project.property('withSourcesJar').toString().toLowerCase() == 'true'
 
 version = project.mod_version
 group = project.maven_group
@@ -117,10 +118,10 @@ java {
     // if (JavaVersion.current() < javaVersion) {
     //     toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
     // }
-    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-    // if it is present.
-    // If you remove this line, sources will not be generated.
-    withSourcesJar()
+    // Loom attaches RemapSourcesJar to "build" when this is enabled. Off by default; use -PwithSourcesJar=true.
+    if (withSourcesJar) {
+        withSourcesJar()
+    }
 }
 
 jar {
