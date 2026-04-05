@@ -1,12 +1,27 @@
 package com.github.xandergos.terraindiffusionmc.client;
 
+import com.github.xandergos.terraindiffusionmc.world.HeightConverter;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleSelectionState;
+import net.minecraft.client.gui.screen.world.CreateWorldScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.TextWidget;
+import net.minecraft.registry.RegistryEntryLookup;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
+import net.minecraft.world.dimension.DimensionOptions;
+import net.minecraft.world.dimension.DimensionOptionsRegistryHolder;
+import net.minecraft.world.dimension.DimensionType;
+import net.minecraft.world.gen.chunk.ChunkGenerator;
+import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
+import net.minecraft.world.gen.chunk.GenerationShapeConfig;
+import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * World creation settings screen for selecting the initial terrain scale of a world.
@@ -94,10 +109,102 @@ public final class WorldScaleSettingsScreen extends Screen {
                 validationTextWidget.setMessage(ERROR_TEXT);
                 return;
             }
+            applyWorldHeightForScale(selectedScale);
             WorldScaleSelectionState.setPendingScale(selectedScale);
             close();
         } catch (NumberFormatException exception) {
             validationTextWidget.setMessage(ERROR_TEXT);
         }
+    }
+
+    /**
+     * Applies per-world dimension and generator height based on the chosen scale.
+     */
+    private void applyWorldHeightForScale(int selectedScale) {
+        if (!(parentScreen instanceof CreateWorldScreen createWorldScreen)) {
+            return;
+        }
+
+        createWorldScreen.getWorldCreator().applyModifier((registryManager, selectedDimensions) -> {
+            DimensionOptionsRegistryHolder updatedDimensions = updateOverworldHeight(selectedDimensions, selectedScale);
+            return updatedDimensions == null ? selectedDimensions : updatedDimensions;
+        });
+    }
+
+    private DimensionOptionsRegistryHolder updateOverworldHeight(DimensionOptionsRegistryHolder selectedDimensions, int selectedScale) {
+        DimensionOptions overworldOptions = selectedDimensions.getOrEmpty(DimensionOptions.OVERWORLD).orElse(null);
+        if (overworldOptions == null) {
+            return null;
+        }
+
+        DimensionType baseDimensionType = overworldOptions.dimensionTypeEntry().value();
+        int minimumY = baseDimensionType.minY();
+        int maxGeneratedY = HeightConverter.getMaxGeneratedYForScale(selectedScale);
+        int requiredHeight = alignToSectionHeight(maxGeneratedY - minimumY + 1);
+        int maxAllowedHeight = Math.min(DimensionType.MAX_HEIGHT, DimensionType.MAX_COLUMN_HEIGHT - minimumY);
+        int boundedHeight = Math.max(16, Math.min(requiredHeight, maxAllowedHeight));
+        int boundedLogicalHeight = boundedHeight;
+
+        DimensionType updatedDimensionType = new DimensionType(
+                baseDimensionType.fixedTime(),
+                baseDimensionType.hasSkyLight(),
+                baseDimensionType.hasCeiling(),
+                baseDimensionType.ultrawarm(),
+                baseDimensionType.natural(),
+                baseDimensionType.coordinateScale(),
+                baseDimensionType.bedWorks(),
+                baseDimensionType.respawnAnchorWorks(),
+                minimumY,
+                boundedHeight,
+                boundedLogicalHeight,
+                baseDimensionType.infiniburn(),
+                baseDimensionType.effects(),
+                baseDimensionType.ambientLight(),
+                baseDimensionType.cloudHeight(),
+                baseDimensionType.monsterSettings()
+        );
+
+        ChunkGenerator updatedChunkGenerator = updateChunkGeneratorHeight(overworldOptions.chunkGenerator(), minimumY, boundedHeight);
+        DimensionOptions updatedOverworldOptions = new DimensionOptions(RegistryEntry.of(updatedDimensionType), updatedChunkGenerator);
+
+        Map<RegistryKey<DimensionOptions>, DimensionOptions> updatedDimensionMap = new HashMap<>(selectedDimensions.dimensions());
+        updatedDimensionMap.put(DimensionOptions.OVERWORLD, updatedOverworldOptions);
+        return new DimensionOptionsRegistryHolder(updatedDimensionMap);
+    }
+
+    private ChunkGenerator updateChunkGeneratorHeight(ChunkGenerator chunkGenerator, int minimumY, int boundedHeight) {
+        if (!(chunkGenerator instanceof NoiseChunkGenerator noiseChunkGenerator)) {
+            return chunkGenerator;
+        }
+
+        ChunkGeneratorSettings baseSettings = noiseChunkGenerator.getSettings().value();
+        GenerationShapeConfig baseShapeConfig = baseSettings.generationShapeConfig();
+        GenerationShapeConfig updatedShapeConfig = new GenerationShapeConfig(
+                minimumY,
+                boundedHeight,
+                baseShapeConfig.horizontalSize(),
+                baseShapeConfig.verticalSize()
+        );
+
+        ChunkGeneratorSettings updatedSettings = new ChunkGeneratorSettings(
+                updatedShapeConfig,
+                baseSettings.defaultBlock(),
+                baseSettings.defaultFluid(),
+                baseSettings.noiseRouter(),
+                baseSettings.surfaceRule(),
+                baseSettings.spawnTarget(),
+                baseSettings.seaLevel(),
+                baseSettings.mobGenerationDisabled(),
+                baseSettings.aquifers(),
+                baseSettings.oreVeins(),
+                baseSettings.usesLegacyRandom()
+        );
+
+        return new NoiseChunkGenerator(noiseChunkGenerator.getBiomeSource(), RegistryEntry.of(updatedSettings));
+    }
+
+    private int alignToSectionHeight(int requiredHeight) {
+        int sectionHeight = 16;
+        return ((requiredHeight + sectionHeight - 1) / sectionHeight) * sectionHeight;
     }
 }

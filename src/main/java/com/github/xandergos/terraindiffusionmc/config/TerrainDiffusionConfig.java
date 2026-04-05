@@ -14,9 +14,6 @@ public final class TerrainDiffusionConfig {
     private static final String FILE_NAME = "terrain-diffusion-mc.properties";
     private static final String RESOURCE_PATH = "/" + FILE_NAME;
     private static final Properties PROPERTIES = new Properties();
-    private static final float DEFAULT_GAMMA = 1.0f;
-    private static final float DEFAULT_C = 30.0f;
-    private static final int DEFAULT_SCALE = 2;
     private static final String DEFAULT_INFERENCE_DEVICE = "auto";
     private static final boolean DEFAULT_OFFLOAD_MODELS = true;
     private static final int DEFAULT_EXPLORER_PORT = 19842;
@@ -30,19 +27,6 @@ public final class TerrainDiffusionConfig {
     }
 
     private TerrainDiffusionConfig() {
-    }
-
-    /** Blocks per native 30m pixel. scale=2 → 1 block = 15m. */
-    public static int scale() {
-        return readInt("scale", DEFAULT_SCALE);
-    }
-
-    public static float heightConverterGamma() {
-        return readFloat("height_converter.gamma", DEFAULT_GAMMA);
-    }
-
-    public static float heightConverterC() {
-        return readFloat("height_converter.c", DEFAULT_C);
     }
 
     /** Inference device: "cpu", "gpu", or "auto" (try GPU then fall back to CPU). */
@@ -72,9 +56,6 @@ public final class TerrainDiffusionConfig {
         }
 
         if (!loadedFromResource) {
-            PROPERTIES.setProperty("scale", String.valueOf(DEFAULT_SCALE));
-            PROPERTIES.setProperty("height_converter.gamma", String.valueOf(DEFAULT_GAMMA));
-            PROPERTIES.setProperty("height_converter.c", String.valueOf(DEFAULT_C));
             PROPERTIES.setProperty("inference.device", DEFAULT_INFERENCE_DEVICE);
         }
     }
@@ -135,16 +116,4 @@ public final class TerrainDiffusionConfig {
         }
     }
 
-    private static float readFloat(String key, float defaultValue) {
-        String value = PROPERTIES.getProperty(key);
-        if (value == null) {
-            return defaultValue;
-        }
-        try {
-            return Float.parseFloat(value);
-        } catch (NumberFormatException e) {
-            System.err.println("Invalid float for " + key + ": " + value + ", using default " + defaultValue);
-            return defaultValue;
-        }
-    }
 }

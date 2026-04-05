@@ -71,31 +71,32 @@ Note that Minecraft uses a flipped coordinate system, so you will need to flip t
 
 ## Configuration
 
-There are some configuration options you can play with, if you want:
+There are two configuration scopes:
+
+1. Global mod config file (`config/terrain-diffusion-mc.properties`)
+2. Per-world Terrain Diffusion settings (set in world creation UI)
 
 ```
 # Terrain Diffusion MC configuration
 
-# This is the native resolution for height conversion (Resolution before `scale` is applied)
-# If you are using a 30m resolution model, this should be 30 for real life slopes.
-# You can adjust the value down to increase terrain height or up to decrease it.
-height_converter.resolution=30
+# Inference device: "cpu", "gpu", or "auto" (try GPU first then fall back to CPU).
+inference.device=auto
 
-# Scale factor for terrain upsampling. 1 = 1 block per API pixel, 2 = 2 blocks per API pixel, 4 = 4 blocks per API pixel, etc.
-# Example: If you are using a 30m resolution API, then 1 = 30m resolution, 2 = 15m resolution, 4 = 7.5m resolution, etc.
-heightmap_api.scale=2
+# Offload inactive models from VRAM between pipeline stages.
+inference.offload_models=true
 
-# Noise scale factor for terrain at large slopes (default: 1.0)
-# mainly affects how "rough" cliffs or steep slopes are
-heightmap_api.noise=1.0
+# Port for the local terrain explorer web UI (/td-explore).
+explorer.port=19842
 
-# Base URL of the heightmap API server.
-heightmap_api.url=http://localhost:8000
-
-# ADVANCED
-# Gamma and c of terrain (Mod applies elev -> ((elev + c)^gamma - c^gamma) before scaling down by `height_converter.resolution`)
-# I tried experimenting with this to boost low-elevation relief, but didn't really see any improvements. Maybe I missed something. Note that this changes the scale of the elevation, so `height_converter.resolution`
-# will need to be changed accordingly (usually to a much smaller value).
-height_converter.gamma=1.0
-height_converter.c=30.0
 ```
+
+### Per-world settings
+
+For Terrain Diffusion worlds, click **Customize** in world creation and set:
+
+- `World Scale` (integer `>= 1`)
+
+This value is saved in that world save and affects:
+
+- block-to-meter mapping (`scale=1` => `30m/block`, `scale=2` => `15m/block`, etc.)
+- world max height for newly created worlds (computed from the max pipeline height assumption of `10000m`)
