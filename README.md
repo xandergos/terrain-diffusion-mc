@@ -1,14 +1,16 @@
 # Terrain Diffusion Fabric Mod
 
 This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
-The mod works purely server-side and can be used on multiplayer servers. In v2, the mod is **self-contained**: it runs ML inference locally via ONNX and does not require any external Python process.
-
-This is a research preview. I cannot guarantee continued maintenance of the mod, but I am happy to support mod developers.
+The mod works purely server-side and can be used on multiplayer servers. In v2, the mod is **self-contained**: it runs ML inference locally via ONNX. The released version utilizes CUDA for GPU acceleration.
 
 ## Requirements
 
 - Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed.
 - An NVIDIA GPU with CUDA is strongly recommended. CPU inference is supported but slow (see [Configuration)](#configuration).
+
+**If you have an NVIDIA GPU**:
+- Download CUDA 12.x (Not 13): https://developer.nvidia.com/cuda-toolkit-archive
+- Download cuDNN 9.x: https://developer.nvidia.com/cudnn
 
 ## Installation
 
