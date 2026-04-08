@@ -29,7 +29,6 @@ Use the explorer to scout continents, mountains, islands, and other interesting 
 
 Edit `config/terrain-diffusion-mc.properties` (created automatically on first launch):
 
-```
 # Terrain Diffusion MC configuration
 
 # Inference device: "cpu", "gpu", or "auto" (try GPU first then fall back to CPU).
