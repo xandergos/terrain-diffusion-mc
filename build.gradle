@@ -13,12 +13,6 @@ base {
     archivesName = project.archives_base_name + (useCpu ? '-cpu' : '')
 }
 
-sourceSets {
-    buildTools {
-        java { srcDir 'src/build-tools/java' }
-    }
-}
-
 loom {
     splitEnvironmentSourceSets()
 
@@ -34,10 +28,6 @@ fabricApi {
     configureDataGeneration {
         client = true
     }
-}
-
-configurations {
-    onnxOptimizer
 }
 
 repositories {
@@ -63,32 +53,13 @@ dependencies {
         implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.21.0"
         include "com.microsoft.onnxruntime:onnxruntime_gpu:1.21.0"
     }
-    onnxOptimizer "com.microsoft.onnxruntime:onnxruntime:1.21.0"
-    buildToolsImplementation "com.microsoft.onnxruntime:onnxruntime:1.21.0"
-}
-
-def optimizedOnnxDir = file("$buildDir/optimized_onnx")
-def sourceOnnxDir = file('src/main/resources/onnx')
-
-task optimizeOnnxModels(type: JavaExec, dependsOn: compileBuildToolsJava) {
-    classpath = sourceSets.buildTools.output + sourceSets.buildTools.runtimeClasspath
-    mainClass = 'com.github.xandergos.terraindiffusionmc.pipeline.OptimizeOnnxModels'
-    args sourceOnnxDir.absolutePath, optimizedOnnxDir.absolutePath
-    inputs.dir(sourceOnnxDir).withPropertyName('sourceOnnxDir')
-    inputs.files(sourceSets.buildTools.output).withPropertyName('buildToolsOutput')
-    outputs.dir(optimizedOnnxDir).withPropertyName('optimizedOnnxDir')
-    doFirst { optimizedOnnxDir.mkdirs() }
 }
 
 processResources {
-    dependsOn optimizeOnnxModels
     inputs.property "version", project.version
     inputs.property "minecraft_version", project.minecraft_version
     inputs.property "loader_version", project.loader_version
     filteringCharset "UTF-8"
-
-    exclude 'onnx/*.onnx'
-    from(optimizedOnnxDir) { into 'onnx' }
 
     filesMatching("fabric.mod.json") {
         expand "version": project.version,

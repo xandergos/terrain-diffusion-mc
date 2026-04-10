@@ -3,11 +3,16 @@ package com.github.xandergos.terraindiffusionmc.pipeline;
 import ai.onnxruntime.*;
 import ai.onnxruntime.providers.OrtCUDAProviderOptions;
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
+import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.nio.FloatBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -22,6 +27,7 @@ import java.util.Map;
 public final class OnnxModel implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(OnnxModel.class);
+    private static final String OPTIMIZED_MODELS_DIR = "terrain-diffusion-mc/onnx-cache";
 
     // GPU slot: when offload_models=true, only one session is alive at a time.
     private static final Object GPU_SLOT_LOCK = new Object();
@@ -29,7 +35,7 @@ public final class OnnxModel implements AutoCloseable {
     private static OrtSession activeGpuSession = null;
 
     private final OrtEnvironment env;
-    private final byte[] modelBytes;  // weights held in CPU RAM when offloading
+    private final byte[] optimizedModelBytes;
     private final String name;
     private OrtSession cpuSession;    // non-null in CPU-only mode
     private OrtSession gpuSession;    // non-null when offload_models=false
@@ -41,31 +47,99 @@ public final class OnnxModel implements AutoCloseable {
             this.env = OrtEnvironment.getEnvironment(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR);
             try (InputStream is = OnnxModel.class.getResourceAsStream(resourcePath)) {
                 if (is == null) throw new RuntimeException("Model not found: " + resourcePath);
-                this.modelBytes = is.readAllBytes();
+                byte[] sourceModelBytes = is.readAllBytes();
+                this.optimizedModelBytes = optimizeModelAtRuntime(sourceModelBytes);
             }
             if ("cpu".equals(TerrainDiffusionConfig.inferenceDevice())) {
                 OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
                 opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
-                this.cpuSession = env.createSession(modelBytes, opts);
+                this.cpuSession = env.createSession(optimizedModelBytes, opts);
                 this.gpuSession = null;
                 LOG.info("ONNX model '{}' loaded on CPU ({} KB) in {} ms",
-                        name, modelBytes.length / 1024, System.currentTimeMillis() - start);
+                        name, optimizedModelBytes.length / 1024, System.currentTimeMillis() - start);
             } else if (!TerrainDiffusionConfig.offloadModels()) {
                 OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
                 opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
                 addGpuProvider(opts);
-                this.gpuSession = env.createSession(modelBytes, opts);
+                this.gpuSession = env.createSession(optimizedModelBytes, opts);
                 this.cpuSession = null;
                 LOG.info("ONNX model '{}' loaded on GPU ({} KB) in {} ms",
-                        name, modelBytes.length / 1024, System.currentTimeMillis() - start);
+                        name, optimizedModelBytes.length / 1024, System.currentTimeMillis() - start);
             } else {
                 this.cpuSession = null;
                 this.gpuSession = null;
                 LOG.info("ONNX model '{}' bytes cached in CPU RAM ({} KB) in {} ms",
-                        name, modelBytes.length / 1024, System.currentTimeMillis() - start);
+                        name, optimizedModelBytes.length / 1024, System.currentTimeMillis() - start);
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to load ONNX model: " + resourcePath, e);
+        }
+    }
+
+    /**
+     * Optimizes model bytes and caches the optimized file in the config directory.
+     * Falls back to the source model bytes if optimization or cache I/O fails.
+     */
+    private byte[] optimizeModelAtRuntime(byte[] sourceModelBytes) {
+        try {
+            Path optimizedModelPath = resolveOptimizedModelPath(sourceModelBytes);
+            if (Files.exists(optimizedModelPath)) {
+                return Files.readAllBytes(optimizedModelPath);
+            }
+
+            Files.createDirectories(optimizedModelPath.getParent());
+            OrtSession.SessionOptions optimizationOptions = new OrtSession.SessionOptions();
+            optimizationOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.EXTENDED_OPT);
+            optimizationOptions.setOptimizedModelFilePath(optimizedModelPath.toAbsolutePath().toString());
+            try (OrtSession ignored = env.createSession(sourceModelBytes, optimizationOptions)) {
+                // Session creation materializes the optimized model on disk.
+            }
+            byte[] optimizedModelBytesFromDisk = Files.readAllBytes(optimizedModelPath);
+            LOG.info("Optimized ONNX model '{}' at runtime ({} KB -> {} KB)",
+                    name, sourceModelBytes.length / 1024, optimizedModelBytesFromDisk.length / 1024);
+            return optimizedModelBytesFromDisk;
+        } catch (Exception optimizationException) {
+            LOG.warn("Runtime ONNX optimization failed for '{}', using source model bytes: {}",
+                    name, optimizationException.getMessage());
+            return sourceModelBytes;
+        }
+    }
+
+    /**
+     * Resolves a deterministic cache file path for an optimized model.
+     */
+    private Path resolveOptimizedModelPath(byte[] sourceModelBytes) {
+        String sourceModelHashPrefix = sha256Hex(sourceModelBytes).substring(0, 16);
+        String runtimeVersionTag = resolveOnnxRuntimeVersionTag();
+        String optimizedFileName = name + "-" + runtimeVersionTag + "-" + sourceModelHashPrefix + ".onnx";
+        return FabricLoader.getInstance().getConfigDir()
+                .resolve(OPTIMIZED_MODELS_DIR)
+                .resolve(optimizedFileName);
+    }
+
+    /**
+     * Returns the ONNX Runtime version used as part of the optimization cache key.
+     */
+    private static String resolveOnnxRuntimeVersionTag() {
+        Package onnxRuntimePackage = OrtEnvironment.class.getPackage();
+        String implementationVersion = onnxRuntimePackage == null ? null : onnxRuntimePackage.getImplementationVersion();
+        return implementationVersion == null ? "unknown" : implementationVersion;
+    }
+
+    /**
+     * Computes a lowercase SHA-256 hex string for deterministic cache naming.
+     */
+    private static String sha256Hex(byte[] inputBytes) {
+        try {
+            MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+            byte[] digestBytes = messageDigest.digest(inputBytes);
+            StringBuilder hexBuilder = new StringBuilder(digestBytes.length * 2);
+            for (byte digestByte : digestBytes) {
+                hexBuilder.append(String.format("%02x", digestByte));
+            }
+            return hexBuilder.toString();
+        } catch (NoSuchAlgorithmException noSuchAlgorithmException) {
+            throw new IllegalStateException("Missing SHA-256 algorithm", noSuchAlgorithmException);
         }
     }
 
@@ -121,7 +195,7 @@ public final class OnnxModel implements AutoCloseable {
             OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
             opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
             addGpuProvider(opts);
-            activeGpuSession = env.createSession(modelBytes, opts);
+            activeGpuSession = env.createSession(optimizedModelBytes, opts);
             gpuSlotHolder = this;
             LOG.debug("GPU session ready for '{}'", name);
         } catch (OrtException e) {

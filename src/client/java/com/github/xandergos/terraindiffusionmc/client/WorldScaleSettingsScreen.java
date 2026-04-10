@@ -10,6 +10,7 @@ import net.minecraft.client.gui.widget.TextWidget;
 import net.minecraft.registry.Registry;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
@@ -71,7 +72,6 @@ public final class WorldScaleSettingsScreen extends Screen {
                 .build());
 
         validationTextWidget = new TextWidget(0, centerY + 46, this.width, 9, Text.empty(), this.textRenderer);
-        validationTextWidget.setTextColor(0xFF5555);
         this.addDrawableChild(validationTextWidget);
     }
 
@@ -80,8 +80,8 @@ public final class WorldScaleSettingsScreen extends Screen {
      */
     private void addCenteredTextWidget(Text text, int centerX, int y, int color) {
         int textWidth = this.textRenderer.getWidth(text);
-        TextWidget widget = new TextWidget(centerX - textWidth / 2, y, textWidth, 9, text, this.textRenderer);
-        widget.setTextColor(color);
+        MutableText coloredText = text.copy().styled(style -> style.withColor(color));
+        TextWidget widget = new TextWidget(centerX - textWidth / 2, y, textWidth, 9, coloredText, this.textRenderer);
         this.addDrawableChild(widget);
     }
 
