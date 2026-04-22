@@ -102,11 +102,22 @@ This can happen for some older Java versions. Please update to the most recent v
 
 **LoadLibrary failed with error 126**
 
-This is typically due to an improper CUDA or cuDNN installation. Things to check:
-- The appropriate CUDA folder is in PATH, and the folder contains `cudart64_12.dll`
-- The appropriate cuDNN folder is in PATH, and the folder contains `cudnn64_9.dll`
-- CUDA version is 12.x
-- cuDNN version is 9.x
+Windows error 126 means a DLL **or one of its dependencies** could not be found. The DLL itself (`onnxruntime_providers_cuda.dll`) is bundled with the mod, so this almost always points at a missing or mismatched CUDA / cuDNN dependency. When this error fires, the mod now logs a `CUDA provider diagnostics` block listing the CUDA/cuDNN DLLs it could resolve on your PATH; check the Minecraft log first.
+
+Things to check, in rough order of likelihood:
+
+1. **CUDA 12.x bin folder is on PATH** and contains `cudart64_12.dll`
+   (e.g. `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin`).
+2. **cuDNN 9.x x64 folder is on PATH** and contains `cudnn64_9.dll`
+   (e.g. `C:\Program Files\NVIDIA\CUDNN\v9.x\bin\12.x\x64`).
+3. **cuDNN 9 split DLLs are present** in that same folder. cuDNN 9 is split across multiple DLLs and they must all be present:
+   `cudnn_graph64_9.dll`, `cudnn_ops64_9.dll`, `cudnn_cnn64_9.dll`, `cudnn_adv64_9.dll`, `cudnn_heuristic64_9.dll`, `cudnn_engines_precompiled64_9.dll`, `cudnn_engines_runtime_compiled64_9.dll`.
+   If any are missing, reinstall cuDNN 9 and copy the **entire** `bin\<cuda>\x64` folder, not just `cudnn64_9.dll`.
+4. **No conflicting older CUDA / cuDNN entries earlier on PATH.** A leftover CUDA 11.x or cuDNN 8.x entry ahead of 12.x / 9.x will be picked up first and cause error 126. Remove stale entries, or move the 12.x / 9.x entries to the top of the system PATH.
+5. **NVIDIA driver supports CUDA 12.x.** Update to a recent NVIDIA Game Ready / Studio driver if yours is old.
+6. **PATH actually reached the launcher.** Some launchers cache environment variables. Fully close the launcher (including tray icons) and reopen, or reboot, after editing system PATH.
+
+If the in-game diagnostics show `cudart64_12.dll` and `cudnn64_9.dll` both resolving correctly and you still hit error 126, run `where cudart64_12.dll` and `where cudnn64_9.dll` in a fresh Command Prompt and include the output (plus your full system PATH) when opening an issue.
 
 **If your issue is still not resolved, please [raise it here](https://github.com/xandergos/terrain-diffusion-mc/issues/new).**
 
