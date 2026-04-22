@@ -1,8 +1,8 @@
 <img width="2522" height="723" alt="dramatic_range_sillouhette" src="https://github.com/user-attachments/assets/bafb07a9-5957-499f-85d5-26e7eb90ad7b" />
 
-# Terrain Diffusion Fabric Mod
+# Terrain Diffusion for windows Fabric Mod
 
-This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
+This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion). With DirectML backend.
 
 ## Requirements
 
@@ -65,13 +65,6 @@ This value is saved with the world save and affects:
 
 This can happen for some older Java versions. Please update to the most recent version of Java 21 or higher. The [latest Microsoft OpenJDK 21](https://learn.microsoft.com/en-us/java/openjdk/download) version is known to work.
 
-**LoadLibrary failed with error 126**
-
-This is typically due to an improper CUDA or cuDNN installation. Things to check:
-- The appropriate CUDA folder is in PATH, and the folder contains `cudart64_12.dll`
-- The appropriate cuDNN folder is in PATH, and the folder contains `cudnn64_9.dll`
-- CUDA version is 12.x
-- cuDNN version is 9.x
 
 **If your issue is still not resolved, please [raise it here](https://github.com/xandergos/terrain-diffusion-mc/issues/new).**
 
@@ -84,7 +77,16 @@ This is typically due to an improper CUDA or cuDNN installation. Things to check
 ./gradlew build
 ```
 
-At runtime, the mod downloads required model assets from the pinned Hugging Face commit on first launch into `.minecraft/terrain-diffusion-models` and verifies SHA-256 checksums before use. The released jar bundles `onnxruntime_gpu` (CUDA). ONNX Runtime also supports other execution providers (DirectML, TensorRT, ROCm, etc.). See the [ORT provider documentation](https://onnxruntime.ai/docs/execution-providers/) if you want to build with a different backend.
+At runtime, the mod downloads required model assets from the pinned Hugging Face commit on first launch into `.minecraft/terrain-diffusion-models` and verifies SHA-256 checksums before use. The released jar bundles `onnxruntime_directml.jar` (DirectML). ONNX Runtime also supports other execution providers (CUDA, TensorRT, ROCm, etc.). See the [ORT provider documentation](https://onnxruntime.ai/docs/execution-providers/) if you want to build with a different backend.
+
+### Building java with DML
+First, you have to clone the onnxruntime [repository](https://github.com/microsoft/onnxruntime).
+There is [this](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html) tutorial from onnx on how to build and you just need to add --build_java flag. However, in most systems this does not work because of some Cmake issues involving wrong versions of protobuf. To fix this, you need to specify Cmake not to use any external libraries and download everything itself. 
+To fix this, I found this build command useful:
+```
+build.bat --config RelWithDebInfo --build_shared_lib --parallel --skip_tests --cmake_extra_defines FETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER --build_java --use_dml
+```
+Note that this command only works in the Developer Command Prompt for VS 2022. This should build with dml cleanly the release version of onnxruntime.
 
 ## Note For Mod Developers
 
