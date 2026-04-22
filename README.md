@@ -8,7 +8,8 @@ This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.co
 
 - Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
 - An NVIDIA GPU is strongly recommended. CPU inference works but is slow (see Configuration below to use the CPU).
-- VRAM needed: 1.5GB
+- VRAM (GPU RAM) needed: 1.5GB
+- Memory needed: 2.5GB
 
 ## Setup Instructions (Windows + NVIDIA GPU only)
 
@@ -96,6 +97,7 @@ This value is saved with the world save and affects:
 - how many real-world meters each block represents (`scale=1` => `30m/block`, `scale=2` => `15m/block`, etc.)
 - world max height for newly created worlds (assumes tallest point is 10000 real-world meters)
 - 2 is recommended for a good balance of scale and playability. Use 1 for smaller, more compressed worlds.
+- Lower values put more stress on the GPU (Terrain Diffusion runs more often), while higher values put more stress on the CPU (larger world height). Most modern GPUs will be bottlenecked by the CPU around scale 2 or 3.
 
 ## Common Issues
 **A dynamic link library (DLL) initialization routine failed**
@@ -110,7 +112,13 @@ This is typically due to an improper CUDA or cuDNN installation. Things to check
 - CUDA version is 12.x
 - cuDNN version is 9.x
 
+**java.lang.IllegalStateException: Failed to load terrain-diffusion models**
+
+This typically indicates an "out of memory" error (the logs should show this as well). 
+Terrain Diffusion's models take up about 2.5GB of RAM, so make sure to allocate enough ram to account for this.
+
 **If your issue is still not resolved, please [raise it here](https://github.com/xandergos/terrain-diffusion-mc/issues/new).**
+
 
 ## Building from Source
 
