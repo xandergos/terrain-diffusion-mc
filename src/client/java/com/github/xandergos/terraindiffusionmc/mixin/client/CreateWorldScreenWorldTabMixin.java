@@ -19,6 +19,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * Reuses vanilla's World tab "Customize" button for Terrain Diffusion worlds.
+ *
+ * NOTE FOR MC 1.21.1: The intermediary names below (field_42182, method_48676,
+ * method_48680, method_48681) were valid for MC 1.21.11. You must verify the
+ * correct 1.21.1 intermediary names via the Yarn mappings at:
+ *   https://github.com/FabricMC/yarn/tree/1.21.1+build.3/mappings/net/minecraft/client/gui/screen/world
+ * or by running: ./gradlew genSources and inspecting CreateWorldScreen$WorldTab.
  */
 @Mixin(targets = "net.minecraft.client.gui.screen.world.CreateWorldScreen$WorldTab")
 public abstract class CreateWorldScreenWorldTabMixin {
