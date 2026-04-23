@@ -7,8 +7,9 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.gui.widget.TextWidget;
-import net.minecraft.registry.Registry;
+import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
@@ -125,8 +126,11 @@ public final class WorldScaleSettingsScreen extends Screen {
 
         createWorldScreen.getWorldCreator().applyModifier((registryManager, selectedDimensions) -> {
             DimensionOptionsRegistryHolder updatedDimensions =
-                    updateOverworldDimensionType(registryManager.getOrThrow(RegistryKeys.DIMENSION_TYPE),
-                            selectedDimensions, selectedScale);
+                    updateOverworldDimensionType(
+                            registryManager.getWrapperOrThrow(RegistryKeys.DIMENSION_TYPE),
+                            selectedDimensions,
+                            selectedScale
+                    );
             return updatedDimensions == null ? selectedDimensions : updatedDimensions;
         });
     }
@@ -135,7 +139,7 @@ public final class WorldScaleSettingsScreen extends Screen {
      * Replaces only the overworld dimension type entry with the scale-specific pre-registered one.
      */
     private DimensionOptionsRegistryHolder updateOverworldDimensionType(
-            Registry<DimensionType> dimensionTypeRegistry,
+            RegistryWrapper<DimensionType> dimensionTypeRegistry,
             DimensionOptionsRegistryHolder selectedDimensions,
             int selectedScale
     ) {
@@ -145,7 +149,7 @@ public final class WorldScaleSettingsScreen extends Screen {
         }
 
         Identifier dimensionTypeId = Identifier.of(MOD_ID, "terrain_diffusion_scale_" + selectedScale);
-        RegistryEntry.Reference<DimensionType> selectedDimensionTypeEntry = dimensionTypeRegistry.getEntry(dimensionTypeId).orElse(null);
+        RegistryEntry.Reference<DimensionType> selectedDimensionTypeEntry = dimensionTypeRegistry.getOptional(RegistryKey.of(RegistryKeys.DIMENSION_TYPE, dimensionTypeId)).orElse(null);
         if (selectedDimensionTypeEntry == null) {
             return null;
         }

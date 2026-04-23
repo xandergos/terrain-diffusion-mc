@@ -30,12 +30,16 @@
     "erosion": 0,
     "depth": 0,
     "ridges": 0,
+
+    "initial_density_without_jaggedness": 0,
+
     "preliminary_surface_level": {
       "type": "terrain-diffusion-mc:terrain_diffusion"
     },
     "final_density": {
       "type": "terrain-diffusion-mc:terrain_diffusion"
     },
+
     "vein_toggle": 0,
     "vein_ridged": 0,
     "vein_gap": 0
