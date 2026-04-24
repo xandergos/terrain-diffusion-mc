@@ -88,6 +88,7 @@ processResources {
     inputs.property "version", project.version
     inputs.property "minecraft_version", project.minecraft_version
     inputs.property "loader_version", project.loader_version
+    inputs.property "build_variant", buildVariant
     filteringCharset "UTF-8"
     from(generatedManifestFile) {
         into ''
@@ -97,6 +98,9 @@ processResources {
         expand "version": project.version,
                 "minecraft_version": project.minecraft_version,
                 "loader_version": project.loader_version
+    }
+    filesMatching("build-variant.properties") {
+        expand "build_variant": buildVariant
     }
 }
 
@@ -212,6 +216,20 @@ tasks.register('generateModelAssetManifest') {
         ]
         generatedManifestFile.text = JsonOutput.prettyPrint(JsonOutput.toJson(manifestPayload))
     }
+}
+
+def isWindows = System.getProperty('os.name').toLowerCase().startsWith('windows')
+def gradlewExecutable = rootProject.file(isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
+
+['Cuda', 'Dml', 'Cpu'].each { variant ->
+    tasks.register("build${variant}", Exec) {
+        workingDir rootProject.projectDir
+        commandLine gradlewExecutable, 'build', "-Puse${variant}=true"
+    }
+}
+
+tasks.register('buildAll') {
+    dependsOn 'buildCuda', 'buildDml', 'buildCpu'
 }
 
 String sha256Hex(byte[] fileBytes) {

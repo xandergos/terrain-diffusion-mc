@@ -96,20 +96,26 @@ Terrain Diffusion's models take up about 2.5GB of RAM, so make sure to allocate 
 
 An internet connection is required during the build to fetch the pinned model manifest metadata from Hugging Face.
 
-### Windows build (DirectML)
-
 The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source. 
 
-Once you have the jar in `libs/`:
-
+Build for Windows (DirectML):
 ```
 ./gradlew build -PuseDml=true
 ```
 
-### CUDA build
-
+Build for CUDA:
 ```
 ./gradlew build -PuseCuda=true
+```
+
+Build for CPU:
+```
+./gradlew build -PuseCpu=true
+```
+
+Build all:
+```
+./gradelw buildAll
 ```
 
 ### Building onnxruntime with DirectML

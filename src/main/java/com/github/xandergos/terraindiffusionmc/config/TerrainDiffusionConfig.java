@@ -13,6 +13,7 @@ public final class TerrainDiffusionConfig {
     private static final String RESOURCE_PATH = "/" + FILE_NAME;
     private static final Properties PROPERTIES = new Properties();
     private static final String DEFAULT_INFERENCE_DEVICE = "gpu";
+    private static final String BUILD_VARIANT = readBuildVariant();
     private static final boolean DEFAULT_OFFLOAD_MODELS = true;
     private static final boolean DEFAULT_VALIDATE_MODEL = true;
     private static final int DEFAULT_EXPLORER_PORT = 19801;
@@ -31,6 +32,9 @@ public final class TerrainDiffusionConfig {
 
     /** Inference device: "cpu", "gpu", or "auto" (try GPU then fall back to CPU). */
     public static String inferenceDevice() {
+        if ("cpu".equals(BUILD_VARIANT)) {
+            return "cpu";
+        }
         return readString("inference.device", DEFAULT_INFERENCE_DEVICE);
     }
 
@@ -138,6 +142,17 @@ public final class TerrainDiffusionConfig {
 
     private static boolean isPowerOfTwo(int value) {
         return (value & (value - 1)) == 0;
+    }
+
+    private static String readBuildVariant() {
+        try (InputStream in = TerrainDiffusionConfig.class.getResourceAsStream("/build-variant.properties")) {
+            if (in == null) return "unknown";
+            Properties props = new Properties();
+            props.load(in);
+            return props.getProperty("build.variant", "unknown");
+        } catch (IOException e) {
+            return "unknown";
+        }
     }
 
 }
