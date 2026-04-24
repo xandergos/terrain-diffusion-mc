@@ -23,7 +23,7 @@ public final class WorldScaleManager {
      */
     public static void initializeForWorld(ServerWorld serverWorld) {
         WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
-                .getOrCreate(WorldScaleSettingsState.TYPE);
+                .getOrCreate(WorldScaleSettingsState.TYPE, "terrain_diffusion_world_settings");
 
         if (!worldScaleSettingsState.hasExplicitScale()) {
             Integer pendingScale = WorldScaleSelectionState.consumePendingScale();
@@ -46,8 +46,10 @@ public final class WorldScaleManager {
      */
     public static void setCurrentScale(ServerWorld serverWorld, int configuredScale) {
         int clampedScale = clampScale(configuredScale);
+
         WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
-                .getOrCreate(WorldScaleSettingsState.TYPE);
+                .getOrCreate(WorldScaleSettingsState.TYPE, "terrain_diffusion_world_settings");
+
         worldScaleSettingsState.setScale(clampedScale);
         currentScale = clampedScale;
     }

@@ -6,18 +6,26 @@
         "min_delay": 12000,
         "sound": "minecraft:music.overworld.forest"
       }
-    },
-    "minecraft:visual/sky_color": "#79a6ff"
+    }
   },
-  "carvers": [
-    "minecraft:cave",
-    "minecraft:cave_extra_underground",
-    "minecraft:canyon"
-  ],
+
+  "carvers": {
+    "air": [
+      "minecraft:cave",
+      "minecraft:cave_extra_underground",
+      "minecraft:canyon"
+    ]
+  },
+
   "downfall": 0.8,
+
   "effects": {
-    "water_color": "#3f76e4"
+    "sky_color": 7969791,
+    "fog_color": 12632319,
+    "water_color": 4161252,
+    "water_fog_color": 3038607
   },
+
   "features": [
     [],
     [
@@ -72,22 +80,23 @@
     [
       "minecraft:glow_lichen",
       "minecraft:forest_flowers",
-      "terrain-diffusion-mc:trees_birch_and_oak_sparse",
-      "minecraft:patch_bush",
+      "minecraft:trees_birch_and_oak",
       "minecraft:flower_default",
       "minecraft:patch_grass_forest",
       "minecraft:brown_mushroom_normal",
       "minecraft:red_mushroom_normal",
-      "minecraft:patch_pumpkin",
       "minecraft:patch_sugar_cane",
-      "minecraft:patch_firefly_bush_near_water"
+      "minecraft:patch_pumpkin"
     ],
     [
       "minecraft:freeze_top_layer"
     ]
   ],
+
   "has_precipitation": true,
+
   "spawn_costs": {},
+
   "spawners": {
     "ambient": [
       {
@@ -192,5 +201,6 @@
     "water_ambient": [],
     "water_creature": []
   },
+
   "temperature": 0.7
 }
