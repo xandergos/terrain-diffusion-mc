@@ -11,6 +11,7 @@ Two builds are available on the [Releases](https://github.com/xandergos/terrain-
 | ------------------------- | --------------------------- | --------------------------------------- |
 | **Windows** (recommended) | Windows with any modern GPU | None                                    |
 | **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
+| **CPU (Slow)**            | Everything                  | None                                    |
 
 
 Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer CUDA (may improve performance).
