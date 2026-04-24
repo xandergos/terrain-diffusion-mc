@@ -29,6 +29,9 @@ public final class WorldScaleSettingsState extends PersistentState {
         this.explicitScale = hasExplicitScale;
     }
 
+    /**
+     * Creates a default state for worlds that do not yet have saved terrain diffusion settings.
+     */
     public WorldScaleSettingsState() {
         this(WorldScaleManager.DEFAULT_SCALE, false);
     }
@@ -57,6 +60,9 @@ public final class WorldScaleSettingsState extends PersistentState {
         return nbt;
     }
 
+    /**
+     * Type descriptor used by the persistent state manager.
+     */
     public static final PersistentState.Type<WorldScaleSettingsState> TYPE =
             new PersistentState.Type<>(
                     WorldScaleSettingsState::createDefault,
@@ -64,14 +70,23 @@ public final class WorldScaleSettingsState extends PersistentState {
                     null
             );
 
+    /**
+     * Returns the currently persisted world scale.
+     */
     public int getScale() {
         return scale;
     }
 
+    /**
+     * Returns whether this world has an explicitly chosen scale.
+     */
     public boolean hasExplicitScale() {
         return explicitScale;
     }
 
+    /**
+     * Applies a new persisted world scale and marks the state dirty.
+     */
     public void setScale(int configuredScale) {
         this.scale = WorldScaleManager.clampScale(configuredScale);
         this.explicitScale = true;
