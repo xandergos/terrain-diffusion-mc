@@ -189,8 +189,8 @@ public final class LocalTerrainProvider {
             int regionWidth = j2 - j1;
             int regionHeight = i2 - i1;
             LOG.info(
-                    "Terrain Diffusion finished generating region {}x{} ({} newly computed windows)",
-                    regionWidth, regionHeight, newlyComputedWindowCount);
+                    "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
+                    OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
             synchronized (CACHE_LOCK) {
                 CACHE.put(key, data);
                 evictLruTo(MAX_CACHE_SIZE);
@@ -204,8 +204,8 @@ public final class LocalTerrainProvider {
             int regionWidth = j2 - j1;
             int regionHeight = i2 - i1;
             LOG.info(
-                    "Terrain Diffusion uncached region requested: ({}, {})-({}, {}) size {}x{}",
-                    j1, i1, j2, i2, regionWidth, regionHeight);
+                    "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{}",
+                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight);
             INFERENCE_EXECUTOR.submit(toRun);
         }
         try {
