@@ -186,13 +186,11 @@ public final class LocalTerrainProvider {
             long computedWindowCountAfter = pipeline.getTotalComputedWindowCount();
 
             long newlyComputedWindowCount = computedWindowCountAfter - computedWindowCountBefore;
-            if (newlyComputedWindowCount > 0) {
-                int regionWidth = j2 - j1;
-                int regionHeight = i2 - i1;
-                LOG.info(
-                        "Terrain Diffusion finished generating region {}x{} ({} newly computed windows)",
-                        regionWidth, regionHeight, newlyComputedWindowCount);
-            }
+            int regionWidth = j2 - j1;
+            int regionHeight = i2 - i1;
+            LOG.info(
+                    "Terrain Diffusion finished generating region {}x{} ({} newly computed windows)",
+                    regionWidth, regionHeight, newlyComputedWindowCount);
             synchronized (CACHE_LOCK) {
                 CACHE.put(key, data);
                 evictLruTo(MAX_CACHE_SIZE);
