@@ -23,7 +23,7 @@ def generatedManifestDirectory = layout.buildDirectory.dir('generated/model-asse
 def generatedManifestFile = new File(generatedManifestDirectory, 'model-assets-manifest.json')
 
 def buildVariant = useCuda ? 'cuda' : 'windows'
-version = "${project.mod_version}+${project.minecraft_version}-${buildVariant}"
+version = "${project.mod_version}-${buildVariant}+${project.minecraft_version}"
 group = project.maven_group
 
 base {
@@ -37,6 +37,12 @@ loom {
         "terrain-diffusion-mc" {
             sourceSet sourceSets.main
             sourceSet sourceSets.client
+        }
+    }
+
+    runs {
+        configureEach {
+            property 'log4j2.configurationFile', rootProject.file('log4j2-dev.xml').absolutePath
         }
     }
 }
