@@ -1,15 +1,23 @@
 {
-  "attributes": {
-    "minecraft:visual/sky_color": "#839eff"
+  "carvers": {
+    "air": [
+      "minecraft:cave",
+      "minecraft:cave_extra_underground",
+      "minecraft:canyon"
+    ]
   },
-  "carvers": [
-    "minecraft:cave",
-    "minecraft:cave_extra_underground",
-    "minecraft:canyon"
-  ],
   "downfall": 0.4,
   "effects": {
-    "water_color": "#3d57d6"
+    "fog_color": 12638463,
+    "mood_sound": {
+      "block_search_extent": 8,
+      "offset": 2,
+      "sound": "minecraft:ambient.cave",
+      "tick_delay": 6000
+    },
+    "sky_color": 8625919,
+    "water_color": 4020182,
+    "water_fog_color": 329011
   },
   "features": [
     [],
@@ -70,9 +78,8 @@
       "minecraft:patch_grass_taiga_2",
       "minecraft:brown_mushroom_taiga",
       "minecraft:red_mushroom_taiga",
-      "minecraft:patch_pumpkin",
       "minecraft:patch_sugar_cane",
-      "minecraft:patch_firefly_bush_near_water",
+      "minecraft:patch_pumpkin",
       "minecraft:patch_berry_rare"
     ],
     [

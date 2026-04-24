@@ -18,7 +18,6 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
-import java.net.URI;
 import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 import org.slf4j.Logger;
@@ -60,8 +59,8 @@ public class TerrainDiffusionMc implements ModInitializer {
             int port = ExplorerServer.startIfNotRunning();
             String url = "http://localhost:" + port;
             MutableText link = Text.literal(url)
-                    .styled(s -> s.withClickEvent(new ClickEvent.OpenUrl(URI.create(url)))
-                                  .withUnderline(true));
+                    .styled(s -> s.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
+                            .withUnderline(true));
             ctx.getSource().sendFeedback(
                     () -> Text.literal("Terrain Explorer: ").append(link),
                     false);

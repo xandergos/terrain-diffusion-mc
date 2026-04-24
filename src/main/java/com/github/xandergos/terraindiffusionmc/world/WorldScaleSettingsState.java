@@ -2,8 +2,12 @@ package com.github.xandergos.terraindiffusionmc.world;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Persisted per-world settings for terrain diffusion.
@@ -11,6 +15,8 @@ import net.minecraft.world.PersistentStateType;
  * <p>This is stored in the world save via Minecraft's persistent state manager.
  */
 public final class WorldScaleSettingsState extends PersistentState {
+    private static final Logger LOG = LoggerFactory.getLogger(WorldScaleSettingsState.class);
+
     private static final Codec<WorldScaleSettingsState> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("scale", WorldScaleManager.DEFAULT_SCALE).forGetter(WorldScaleSettingsState::getScale),
             Codec.BOOL.optionalFieldOf("explicit_scale", false).forGetter(WorldScaleSettingsState::hasExplicitScale)
@@ -34,8 +40,12 @@ public final class WorldScaleSettingsState extends PersistentState {
     /**
      * Type descriptor used by the persistent state manager.
      */
-    public static final PersistentStateType<WorldScaleSettingsState> TYPE =
-            new PersistentStateType<>("terrain_diffusion_world_settings", WorldScaleSettingsState::createDefault, CODEC, null);
+    public static final PersistentState.Type<WorldScaleSettingsState> TYPE =
+            new PersistentState.Type<>(
+                    WorldScaleSettingsState::createDefault,
+                    WorldScaleSettingsState::readNbt,
+                    null
+            );
 
     /**
      * Returns the currently persisted world scale.
@@ -58,5 +68,26 @@ public final class WorldScaleSettingsState extends PersistentState {
         this.scale = WorldScaleManager.clampScale(configuredScale);
         this.explicitScale = true;
         markDirty();
+    }
+
+    @Override
+    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+        CODEC.encodeStart(registryLookup.getOps(NbtOps.INSTANCE), this)
+                .resultOrPartial(error -> LOG.error("Failed to save WorldScaleSettingsState: {}", error))
+                .ifPresent(encoded -> {
+                    if (encoded instanceof NbtCompound compound){
+                        nbt.copyFrom(compound);
+                    }else{
+                        LOG.error("Expected NbtCompound but got {}", encoded.getClass().getSimpleName());
+                    }
+                });
+
+        return nbt;
+    }
+
+    public static WorldScaleSettingsState readNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup wrapperLookup) {
+        return CODEC.parse(wrapperLookup.getOps(NbtOps.INSTANCE), nbt)
+                .resultOrPartial(error -> LOG.error("Failed to load WorldScaleSettingsState: {}", error))
+                .orElseGet(WorldScaleSettingsState::createDefault);
     }
 }
