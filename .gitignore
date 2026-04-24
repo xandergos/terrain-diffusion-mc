@@ -123,3 +123,4 @@ bin/
 *.onnx
 .cursor/
 .vscode/
+libs/

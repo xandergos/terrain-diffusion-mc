@@ -1,55 +1,30 @@
-<img width="2522" height="723" alt="dramatic_range_sillouhette" src="https://github.com/user-attachments/assets/bafb07a9-5957-499f-85d5-26e7eb90ad7b" />
-
 # Terrain Diffusion Fabric Mod
 
 This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
 
+## Which version should I use?
+
+Two builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
+
+
+| Build                     | Supports                    | Setup required                          |
+| ------------------------- | --------------------------- | --------------------------------------- |
+| **Windows** (recommended) | Windows with any modern GPU | None                                    |
+| **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
+
+
+Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer CUDA (may improve performance).
+
 ## Requirements
 
 - Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
-- An NVIDIA GPU is strongly recommended. CPU inference works but is slow (see Configuration below to use the CPU).
+- Windows with a GPU OR Linux with an NVIDIA GPU is strongly recommended. CPU inference works but is very slow.
 - VRAM (GPU RAM) needed: 1.5GB
-- Memory needed: 2.5GB
-
-## Setup Instructions (Windows + NVIDIA GPU only)
-
-> **On Linux?** Follow the [Official ONNX Runtime instructions](https://onnxruntime.ai/docs/install/#cuda-and-cudnn). The required CUDA and cuDNN versions are the same as windows.
-
-#### Step 1: Install CUDA 12
-
-Go to the [CUDA Toolkit Archive](https://developer.nvidia.com/cuda-toolkit-archive) and download any **12.x** version.
-
-> ⚠️ Do not install version 13 — it isn't supported yet.
-
-#### Step 2: Install cuDNN 9
-
-Go to the [cuDNN download page](https://developer.nvidia.com/cudnn) and download any **9.x** version.
-
-#### Step 3: Add CUDA to PATH
-
-After installing, find your CUDA `bin` folder containing `cudart64_12.dll`. It should look like this:
-
-`C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin`
-
-The version number (e.g. `v12.9`) may differ slightly, that's fine. Before copying the path, confirm the folder contains a file named `cudart64_12.dll`.
-
-Then add this path to your system PATH. ([How do I edit PATH on Windows?](https://www.architectryan.com/2018/03/17/add-to-the-path-on-windows-10/))
-
-> Ensure that you **edit** the system **path** or **PATH** variable, adding this **folder** to the list, as shown in the link above. Do **not** create a new variable.
-
-#### Step 4: Add cuDNN to PATH
-
-Find the cuDNN folder containing `cudnn64_9.dll`. It should look something like this:
-
-`C:\Program Files\NVIDIA\CUDNN\v9.x\bin\12.x\x64`
-
-`9.x` and `12.x` should be your cuDNN and CUDA version respectively. Confirm the folder contains `cudnn64_9.dll`, then add it to PATH the same way.
-
-#### Step 5: Restart your PC
-
-You may need to restart your PC for PATH changes to take effect. Once you're back, you're all set.
+- RAM needed: 2.5GB (May need to increase Minecraft's RAM allocation)
 
 ## Usage
+
+**If using CUDA build:** First see [CUDA_INSTALL.md](CUDA_INSTALL.md).
 
 1. Download the mod jar from [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) for your Minecraft version and place it in your Minecraft `mods/` folder. Make sure the Minecraft version matches.
 2. Launch Minecraft, at least once online to download the models (~2.5GB).
@@ -69,8 +44,9 @@ Edit `config/terrain-diffusion-mc.properties` (created automatically on first la
 # Terrain Diffusion MC configuration
 
 # Inference device: "cpu", "gpu", or "auto" (try GPU first then fall back to CPU).
-# Defaults to "gpu" so startup fails loudly if CUDA is expected but not detected.
-# Set to "cpu" explicitly if you do not have a CUDA-capable GPU.
+# "gpu" uses DirectML on the -windows build, or CUDA on the -cuda build.
+# Defaults to "gpu" so startup fails loudly if GPU inference is expected but not detected.
+# Set to "cpu" if you do not have a supported GPU.
 inference.device=gpu
 
 # Offload inactive models from VRAM between pipeline stages.
@@ -100,36 +76,65 @@ This value is saved with the world save and affects:
 - Lower values put more stress on the GPU (Terrain Diffusion runs more often), while higher values put more stress on the CPU (larger world height). Most modern GPUs will be bottlenecked by the CPU around scale 2 or 3.
 
 ## Common Issues
+
 **A dynamic link library (DLL) initialization routine failed**
 
 This can happen for some older Java versions. Please update to the most recent version of Java 21 or higher. The [latest Microsoft OpenJDK 21](https://learn.microsoft.com/en-us/java/openjdk/download) version is known to work.
 
-**LoadLibrary failed with error 126**
+**LoadLibrary failed with error 126** *(CUDA build only)*
 
-This is typically due to an improper CUDA or cuDNN installation. Things to check:
-- The appropriate CUDA folder is in PATH, and the folder contains `cudart64_12.dll`
-- The appropriate cuDNN folder is in PATH, and the folder contains `cudnn64_9.dll`
-- CUDA version is 12.x
-- cuDNN version is 9.x
+This is typically due to an improper CUDA or cuDNN installation. See [CUDA_INSTALL.md](CUDA_INSTALL.md) for troubleshooting steps.
 
 **java.lang.IllegalStateException: Failed to load terrain-diffusion models**
 
-This typically indicates an "out of memory" error (the logs should show this as well). 
-Terrain Diffusion's models take up about 2.5GB of RAM, so make sure to allocate enough ram to account for this.
+This typically indicates an "out of memory" error (the logs should show this as well).
+Terrain Diffusion's models take up about 2.5GB of RAM, so make sure to allocate enough RAM to account for this.
 
 **If your issue is still not resolved, please [raise it here](https://github.com/xandergos/terrain-diffusion-mc/issues/new).**
 
-
 ## Building from Source
 
-1. Clone this repository.
-2. Build with Gradle (online connection required during build to fetch the pinned model manifest metadata):
+An internet connection is required during the build to fetch the pinned model manifest metadata from Hugging Face.
+
+### Windows build (DirectML)
+
+The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source. 
+
+Once you have the jar in `libs/`:
 
 ```
-./gradlew build
+./gradlew build -PuseDml=true
 ```
 
-At runtime, the mod downloads required model assets from the pinned Hugging Face commit on first launch into `.minecraft/terrain-diffusion-models` and verifies SHA-256 checksums before use. The released jar bundles `onnxruntime_gpu` (CUDA). ONNX Runtime also supports other execution providers (DirectML, TensorRT, ROCm, etc.). See the [ORT provider documentation](https://onnxruntime.ai/docs/execution-providers/) if you want to build with a different backend.
+### CUDA build
+
+```
+./gradlew build -PuseCuda=true
+```
+
+### Building onnxruntime with DirectML
+
+**Requirements**
+
+- [Windows 10 SDK (10.0.17134.0)](https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/index-legacy) — for Windows 10 version 1803 or newer
+- Visual Studio 2017 toolchain — install *Desktop development with C++* from the VS Installer
+- Visual Studio 2022 toolchain — same as above
+- Python 3.10+: [https://python.org/](https://python.org/)
+- CMake 3.28 or higher
+
+Keep both VS toolchains up to date. Full details at the [ONNX Runtime build docs](https://onnxruntime.ai/docs/build/inferencing.html) and the [DirectML EP requirements](https://onnxruntime.ai/docs/execution-providers/DirectML-ExecutionProvider.html#build).
+
+**Steps**
+
+Run all commands from the **Developer Command Prompt for VS 2022**.
+
+```
+git clone --recursive https://github.com/Microsoft/onnxruntime.git
+cd onnxruntime
+.\build.bat --config RelWithDebInfo --build_shared_lib --parallel --compile_no_warning_as_error --skip_submodule_sync --use_dml --build_java --build
+```
+
+The built jar appears in `java/build/`. Rename it to `onnxruntime-dml.jar` and place it in `libs/` in this repository.
 
 ## Note For Mod Developers
 

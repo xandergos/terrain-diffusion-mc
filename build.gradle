@@ -7,18 +7,27 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-def useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
+def useCuda = project.hasProperty('useCuda') && project.property('useCuda').toString().toLowerCase() == 'true'
+def useDml = project.hasProperty('useDml') && project.property('useDml').toString().toLowerCase() == 'true'
 def withSourcesJar = project.hasProperty('withSourcesJar') && project.property('withSourcesJar').toString().toLowerCase() == 'true'
+
+if (useCuda && useDml) {
+    throw new GradleException("Only one of -PuseCuda or -PuseDml may be specified at a time.")
+}
+if (!useDml) useCuda = true
+
+println "Build variant: ${useCuda ? 'CUDA' : 'DirectML (Windows)'}"
 def modelRepositorySlug = 'xandergos/terrain-diffusion-30m-onnx'
 def modelRepositoryRevision = 'ad2df557eca5645f588766101cf3bc3682455c3e'
 def generatedManifestDirectory = layout.buildDirectory.dir('generated/model-assets').get().asFile
 def generatedManifestFile = new File(generatedManifestDirectory, 'model-assets-manifest.json')
 
-version = project.mod_version
+def buildVariant = useCuda ? 'cuda' : 'windows'
+version = "${project.mod_version}+${project.minecraft_version}-${buildVariant}"
 group = project.maven_group
 
 base {
-    archivesName = project.archives_base_name + (useCpu ? '-cpu' : '')
+    archivesName = project.archives_base_name
 }
 
 loom {
@@ -44,6 +53,7 @@ repositories {
     // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html
     // for more information about repositories.
+    flatDir { dirs 'libs'}
 }
 
 dependencies {
@@ -54,12 +64,12 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    if (useCpu) {
+    if (useCuda) {
         implementation "com.microsoft.onnxruntime:onnxruntime:1.20.0"
         include "com.microsoft.onnxruntime:onnxruntime:1.20.0"
-    } else {
-        implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
-        include "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
+    } else if (useDml) {
+        implementation 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
+        include 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
     }
 }
 
