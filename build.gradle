@@ -9,20 +9,21 @@ import java.security.MessageDigest
 
 def useCuda = project.hasProperty('useCuda') && project.property('useCuda').toString().toLowerCase() == 'true'
 def useDml = project.hasProperty('useDml') && project.property('useDml').toString().toLowerCase() == 'true'
+def useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
 def withSourcesJar = project.hasProperty('withSourcesJar') && project.property('withSourcesJar').toString().toLowerCase() == 'true'
 
-if (useCuda && useDml) {
-    throw new GradleException("Only one of -PuseCuda or -PuseDml may be specified at a time.")
+if ([useCuda, useDml, useCpu].count { it } > 1) {
+    throw new GradleException("Only one of -PuseCuda, -PuseDml, or -PuseCpu may be specified at a time.")
 }
-if (!useDml) useCuda = true
+if (!useDml && !useCpu && !useCuda) useDml = true
 
-println "Build variant: ${useCuda ? 'CUDA' : 'DirectML (Windows)'}"
+println "Build variant: ${useCuda ? 'CUDA' : useDml ? 'DirectML (Windows)' : 'CPU'}"
 def modelRepositorySlug = 'xandergos/terrain-diffusion-30m-onnx'
 def modelRepositoryRevision = 'ad2df557eca5645f588766101cf3bc3682455c3e'
 def generatedManifestDirectory = layout.buildDirectory.dir('generated/model-assets').get().asFile
 def generatedManifestFile = new File(generatedManifestDirectory, 'model-assets-manifest.json')
 
-def buildVariant = useCuda ? 'cuda' : 'windows'
+def buildVariant = useCuda ? 'cuda' : useDml ? 'windows' : 'cpu'
 version = "${project.mod_version}-${buildVariant}+${project.minecraft_version}"
 group = project.maven_group
 
@@ -42,7 +43,7 @@ loom {
 
     runs {
         configureEach {
-            property 'log4j2.configurationFile', rootProject.file('log4j2-dev.xml').absolutePath
+            ideConfigGenerated true
         }
     }
 }
@@ -71,6 +72,9 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     if (useCuda) {
+        implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
+        include "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
+    } else if (useCpu) {
         implementation "com.microsoft.onnxruntime:onnxruntime:1.20.0"
         include "com.microsoft.onnxruntime:onnxruntime:1.20.0"
     } else if (useDml) {
@@ -127,6 +131,10 @@ jar {
     from("LICENSE") {
         rename { "${it}_${project.archivesBaseName}" }
     }
+}
+
+tasks.withType(JavaExec).configureEach {
+    systemProperty 'log4j2.configurationFile', rootProject.file('log4j2-dev.xml').absolutePath
 }
 
 // configure the maven publication
