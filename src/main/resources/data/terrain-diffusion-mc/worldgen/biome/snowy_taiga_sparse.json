@@ -6,16 +6,19 @@
       "minecraft:canyon"
     ]
   },
-
   "downfall": 0.4,
-
   "effects": {
-    "sky_color": 8659455,
-    "water_color": 4010950,
-    "fog_color": 12632319,
-    "water_fog_color": 3038607
+    "fog_color": 12638463,
+    "mood_sound": {
+      "block_search_extent": 8,
+      "offset": 2.0,
+      "sound": "minecraft:ambient.cave",
+      "tick_delay": 6000
+    },
+    "sky_color": 8625919,
+    "water_color": 4020182,
+    "water_fog_color": 329011
   },
-
   "features": [
     [],
     [
@@ -83,11 +86,8 @@
       "minecraft:freeze_top_layer"
     ]
   ],
-
   "has_precipitation": true,
-
   "spawn_costs": {},
-
   "spawners": {
     "ambient": [
       {
@@ -204,6 +204,5 @@
     "water_ambient": [],
     "water_creature": []
   },
-
   "temperature": -0.5
 }
