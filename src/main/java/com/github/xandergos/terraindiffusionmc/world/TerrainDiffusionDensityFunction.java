@@ -3,14 +3,14 @@ package com.github.xandergos.terraindiffusionmc.world;
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.HeightmapData;
-import com.mojang.serialization.MapCodec;
+import com.mojang.serialization.Codec;
 import net.minecraft.world.gen.densityfunction.DensityFunction;
 
 
 public class TerrainDiffusionDensityFunction implements DensityFunction {
 
-    public static final MapCodec<TerrainDiffusionDensityFunction> CODEC =
-            MapCodec.unit(TerrainDiffusionDensityFunction::new);
+    public static final Codec<TerrainDiffusionDensityFunction> CODEC =
+            Codec.unit(new TerrainDiffusionDensityFunction());
 
     public static final TerrainDiffusionDensityFunction INSTANCE =
             new TerrainDiffusionDensityFunction();

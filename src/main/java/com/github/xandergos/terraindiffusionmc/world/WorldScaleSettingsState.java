@@ -4,7 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.registry.RegistryWrapper;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.PersistentState;
 
 /**
@@ -32,6 +32,10 @@ public final class WorldScaleSettingsState extends PersistentState {
         this.explicitScale = hasExplicitScale;
     }
 
+    public WorldScaleSettingsState() {
+        this(WorldScaleManager.DEFAULT_SCALE, false);
+    }
+
     public static WorldScaleSettingsState createDefault() {
         return new WorldScaleSettingsState(WorldScaleManager.DEFAULT_SCALE, false);
     }
@@ -39,15 +43,16 @@ public final class WorldScaleSettingsState extends PersistentState {
     /**
      * Type descriptor used by the persistent state manager.
      */
-    public static final PersistentState.Type<WorldScaleSettingsState> TYPE =
-            new PersistentState.Type<>(
-                    WorldScaleSettingsState::createDefault,
-                    WorldScaleSettingsState::fromNbt,
-                    null
-            );
+    public static WorldScaleSettingsState get(ServerWorld world) {
+        return world.getPersistentStateManager().getOrCreate(
+                WorldScaleSettingsState::fromNbt,
+                WorldScaleSettingsState::new,
+                "world_scale_settings"
+        );
+    }
 
     // Type descriptor helper
-    public static WorldScaleSettingsState fromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public static WorldScaleSettingsState fromNbt(NbtCompound nbt) {
         return CODEC.parse(NbtOps.INSTANCE, nbt)
                 .result()
                 .orElseGet(WorldScaleSettingsState::createDefault);
@@ -55,7 +60,7 @@ public final class WorldScaleSettingsState extends PersistentState {
 
     // Type descriptor helper
     @Override
-    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public NbtCompound writeNbt(NbtCompound nbt) {
         CODEC.encodeStart(NbtOps.INSTANCE, this)
                 .result()
                 .ifPresent(encoded -> nbt.copyFrom((NbtCompound) encoded));
