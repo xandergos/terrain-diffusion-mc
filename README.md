@@ -4,7 +4,7 @@ This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.co
 
 ## Which version should I use?
 
-Two builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
+Three builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
 
 
 | Build                     | Supports                    | Setup required                          |
