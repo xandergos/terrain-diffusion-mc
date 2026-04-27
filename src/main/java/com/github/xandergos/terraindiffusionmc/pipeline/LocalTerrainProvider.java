@@ -56,7 +56,7 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private static final int MAX_CACHE_SIZE = 64;
+    private static final int MAX_CACHE_SIZE = 256;
     private static final Object CACHE_LOCK = new Object();
     private static final Map<String, HeightmapData> CACHE = new LinkedHashMap<>(16, 0.75f, true);
     private static final Map<String, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
@@ -230,11 +230,27 @@ public final class LocalTerrainProvider {
 
     private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
         int H = i2 - i1, W = j2 - j1;
+        int pW = W + 2, pH = H + 2;
 
-        float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
-        float[][] out = pipeline.get(i1, j1, i2, j2, true);
-        float[] elevFlat = out[0];
-        float[] climate  = out[1];
+        // Single pipeline call with 1-pixel padding; avoids running Laplacian+climate twice.
+        float[][] out = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, true);
+        float[] elevPadded = out[0]; // (H+2)*(W+2)
+
+        // Crop inner H*W elevation from padded result.
+        float[] elevFlat = new float[H * W];
+        for (int r = 0; r < H; r++)
+            System.arraycopy(elevPadded, (r + 1) * pW + 1, elevFlat, r * W, W);
+
+        // Crop inner 5*H*W climate from padded 5*(H+2)*(W+2) result.
+        float[] climate = null;
+        float[] climatePadded = out[1];
+        if (climatePadded != null) {
+            climate = new float[5 * H * W];
+            for (int ch = 0; ch < 5; ch++)
+                for (int r = 0; r < H; r++)
+                    System.arraycopy(climatePadded, ch * pH * pW + (r + 1) * pW + 1,
+                                     climate, ch * H * W + r * W, W);
+        }
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
         return buildHeightmapData(elevFlat, biomeFlat, H, W);
@@ -280,9 +296,13 @@ public final class LocalTerrainProvider {
         // Upsample climate (4, nH, nW) → (4, H, W)
         float[] climate = upsampleClimate(climateNativeFlat, nH, nW, cropI1, cropJ1, H, W, scale, nH * scale, nW * scale);
 
-        float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
+        // Compute Sobel gradient once; share between noise blending and biome classification.
+        float[] slopeGradient = sobelGradient(elevPadded, H + 2, W + 2, H, W);
+        float[] elevOut = addElevationNoise(elevSmooth, slopeGradient, i1, j1, H, W, pixelSizeM);
 
-        short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
+        float[] slopeRatio = new float[H * W];
+        for (int k = 0; k < H * W; k++) slopeRatio[k] = slopeGradient[k] / pixelSizeM;
+        short[] biomeFlat = BiomeClassifier.classifyWithSlope(elevSmooth, climate, i1, j1, slopeRatio, H, W);
         return buildHeightmapData(elevOut, biomeFlat, H, W);
     }
 
@@ -290,9 +310,8 @@ public final class LocalTerrainProvider {
     // Helpers
     // =========================================================================
 
-    private float[] addElevationNoise(float[] elevSmooth, float[] elevPadded,
+    private float[] addElevationNoise(float[] elevSmooth, float[] slopeGradient,
                                        int i1, int j1, int H, int W, float pixelSizeM) {
-        float[] slopeGradient = sobelGradient(elevPadded, H + 2, W + 2, H, W);
         float[] elevOut = elevSmooth.clone();
         float normFactor = 40f * pixelSizeM / NATIVE_RESOLUTION;
         float ampC = 100f * pixelSizeM / NATIVE_RESOLUTION;

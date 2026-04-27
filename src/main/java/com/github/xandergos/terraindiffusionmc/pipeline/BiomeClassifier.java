@@ -87,50 +87,50 @@ public final class BiomeClassifier {
      */
     public static short[] classify(float[] elev, float[] climate, int i0, int j0,
                                     float[] elevPadded, int H, int W, float pixelSizeM) {
-        short[] out = new short[H * W];
-        for (int i = 0; i < H * W; i++) out[i] = PLAINS;
-
         if (climate == null || climate.length < 4 * H * W) {
+            short[] out = new short[H * W];
+            for (int i = 0; i < H * W; i++) out[i] = PLAINS;
             return out;
         }
+        return classifyWithSlope(elev, climate, i0, j0, computeSlopeRatio(elevPadded, H, W, pixelSizeM), H, W);
+    }
 
-        // Generate Perlin noise perturbations
-        float[] tempNoise = new float[H * W];
-        float[] precipNoiseFact = new float[H * W];
-        float[] snowNoise = new float[H * W];
-
+    /**
+     * Classify biomes using a pre-computed slope-ratio array (avoids a redundant Sobel pass
+     * when the caller already has the gradient for another purpose).
+     *
+     * @param slopeRatio per-pixel slope magnitude divided by pixelSizeM, (H,W) row-major
+     */
+    static short[] classifyWithSlope(float[] elev, float[] climate, int i0, int j0,
+                                      float[] slopeRatio, int H, int W) {
+        if (climate == null || climate.length < 4 * H * W) {
+            short[] out = new short[H * W];
+            for (int i = 0; i < H * W; i++) out[i] = PLAINS;
+            return out;
+        }
+        short[] out = new short[H * W];
         for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
                 int idx = r * W + c;
                 float nx = j0 + c, ny = i0 + r;
+
+                // Inline noise (eliminates separate noise-pass + 3 temporary arrays)
                 float tnc = TEMP_NOISE.GetNoise(nx, ny);
                 float tnf = TEMP_NOISE_FINE.GetNoise(nx, ny);
-                tempNoise[idx] = 0.4f * tnc + 0.2f * tnf;
-
-                float pn = PRECIP_NOISE.GetNoise(nx, ny);
-                precipNoiseFact[idx] = 1.0f + 0.2f * pn;
-
+                float tempNoiseVal = 0.4f * tnc + 0.2f * tnf;
+                float precipNoiseFactVal = 1.0f + 0.2f * PRECIP_NOISE.GetNoise(nx, ny);
                 float snc = SNOW_NOISE.GetNoise(nx, ny);
                 float snf = SNOW_NOISE_FINE.GetNoise(nx, ny);
-                snowNoise[idx] = 3.0f * snc + 2.0f * snf;
-            }
-        }
+                float snowNoiseVal = 3.0f * snc + 2.0f * snf;
 
-        // Compute slope from padded elevation using Sobel (divide by pixelSizeM for ratio)
-        float[] slopeRatio = computeSlopeRatio(elevPadded, H, W, pixelSizeM);
-
-        // Process per-pixel
-        for (int r = 0; r < H; r++) {
-            for (int c = 0; c < W; c++) {
-                int idx = r * W + c;
                 float elevVal   = elev[idx];
                 float altM      = Math.max(0f, elevVal);
                 float slope     = slopeRatio[idx];
 
                 // Climate channels: [0]=temp, [1]=t_season, [2]=precip, [3]=p_cv
-                float temp     = climate[idx] + tempNoise[idx];
+                float temp     = climate[idx] + tempNoiseVal;
                 float tSeason  = climate[H * W + idx];
-                float precip   = Math.max(0f, climate[2 * H * W + idx]) * precipNoiseFact[idx];
+                float precip   = Math.max(0f, climate[2 * H * W + idx]) * precipNoiseFactVal;
                 float pCV      = climate[3 * H * W + idx];
 
                 // Derived climate variables
@@ -183,7 +183,7 @@ public final class BiomeClassifier {
                 }
 
                 // Snow classification
-                float snowTemp = temp + snowNoise[idx];
+                float snowTemp = temp + snowNoiseVal;
                 boolean isSteep = slope > 0.78f;
                 boolean hasSnow = snowTemp < 0f && precip > 150f && !isSteep;
 
@@ -257,7 +257,6 @@ public final class BiomeClassifier {
                 }
 
                 // BWG biome variant selection – spatially-coherent override using low-frequency noise
-                float nx = j0 + c, ny = i0 + r;
                 float vn = BIOME_VARIANT_NOISE.GetNoise(nx, ny); // [-1, 1]
                 if (biome == PLAINS) {
                     if      (vn < -0.667f) biome = BWG_ALLIUM_SHRUBLAND;

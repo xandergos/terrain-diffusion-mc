@@ -3,7 +3,8 @@
     "allow": [
       "Bash(gh api *)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(./gradlew compileJava)"
     ]
   }
 }
