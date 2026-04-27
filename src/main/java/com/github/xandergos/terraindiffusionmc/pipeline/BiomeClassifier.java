@@ -12,6 +12,7 @@ public final class BiomeClassifier {
     private static final FastNoiseLite TEMP_NOISE, TEMP_NOISE_FINE;
     private static final FastNoiseLite PRECIP_NOISE;
     private static final FastNoiseLite SNOW_NOISE, SNOW_NOISE_FINE;
+    private static final FastNoiseLite BIOME_VARIANT_NOISE;
 
     static {
         TEMP_NOISE = makeFnl(12345, 1f/500f, 3, 2f, 0.5f);
@@ -19,6 +20,7 @@ public final class BiomeClassifier {
         PRECIP_NOISE = makeFnl(12345, 1f/500f, 5, 2f, 0.5f);
         SNOW_NOISE = makeFnl(12345, 1f/500f, 3, 2f, 0.5f);
         SNOW_NOISE_FINE = makeFnl(54321, 1f/128f, 2, 2f, 0.5f);
+        BIOME_VARIANT_NOISE = makeFnl(77777, 1f/300f, 3, 2f, 0.5f);
     }
 
     private static FastNoiseLite makeFnl(int seed, float freq, int oct, float lac, float gain) {
@@ -32,13 +34,43 @@ public final class BiomeClassifier {
         return fnl;
     }
 
-    // Biome IDs
+    // Vanilla biome IDs
     static final short PLAINS = 1, SNOWY_PLAINS = 3, DESERT = 5, SWAMP = 6;
     static final short FOREST = 8, TAIGA = 15, SNOWY_TAIGA = 16, SAVANNA = 17;
     static final short WINDSWEPT_HILLS = 19, JUNGLE = 23, BADLANDS = 26, MEADOW = 29;
     static final short GROVE = 31, SNOWY_SLOPES = 32, FROZEN_PEAKS = 33, STONY_PEAKS = 35;
     static final short WARM_OCEAN = 41, OCEAN = 44, COLD_OCEAN = 46, FROZEN_OCEAN = 48;
     static final short FOREST_SPARSE = 108, TAIGA_SPARSE = 115, SNOWY_TAIGA_SPARSE = 116;
+
+    // Oh The Biomes We've Gone biome IDs (200–254)
+    static final short BWG_ALLIUM_SHRUBLAND = 200, BWG_AMARANTH_GRASSLAND = 201;
+    static final short BWG_ARAUCARIA_SAVANNA = 202, BWG_ASPEN_BOREAL = 203;
+    static final short BWG_ATACAMA_OUTBACK = 204, BWG_BAOBAB_SAVANNA = 205;
+    static final short BWG_BASALT_BARRERA = 206, BWG_BAYOU = 207;
+    static final short BWG_BLACK_FOREST = 208, BWG_CANADIAN_SHIELD = 209;
+    static final short BWG_CIKA_WOODS = 210, BWG_COCONINO_MEADOW = 211;
+    static final short BWG_CONIFEROUS_FOREST = 212, BWG_CRAG_GARDENS = 213;
+    static final short BWG_CRIMSON_TUNDRA = 214, BWG_CYPRESS_SWAMPLANDS = 215;
+    static final short BWG_CYPRESS_WETLANDS = 216, BWG_DACITE_RIDGES = 217;
+    static final short BWG_DACITE_SHORE = 218, BWG_DEAD_SEA = 219;
+    static final short BWG_EBONY_WOODS = 220, BWG_ENCHANTED_TANGLE = 221;
+    static final short BWG_ERODED_BOREALIS = 222, BWG_FIRECRACKER_CHAPARRAL = 223;
+    static final short BWG_FORGOTTEN_FOREST = 224, BWG_FRAGMENT_JUNGLE = 225;
+    static final short BWG_FROSTED_CONIFEROUS_FOREST = 226, BWG_FROSTED_TAIGA = 227;
+    static final short BWG_HOWLING_PEAKS = 228, BWG_IRONWOOD_GOUR = 229;
+    static final short BWG_JACARANDA_JUNGLE = 230, BWG_LUSH_STACKS = 231;
+    static final short BWG_MAPLE_TAIGA = 232, BWG_MOJAVE_DESERT = 233;
+    static final short BWG_ORCHARD = 234, BWG_OVERGROWTH_WOODLANDS = 235;
+    static final short BWG_PALE_BOG = 236, BWG_PRAIRIE = 237;
+    static final short BWG_PUMPKIN_VALLEY = 238, BWG_RAINBOW_BEACH = 239;
+    static final short BWG_RED_ROCK_VALLEY = 240, BWG_RED_ROCK_PEAKS = 241;
+    static final short BWG_REDWOOD_THICKET = 242, BWG_ROSE_FIELDS = 243;
+    static final short BWG_RUGGED_BADLANDS = 244, BWG_SAKURA_GROVE = 245;
+    static final short BWG_SHATTERED_GLACIER = 246, BWG_SIERRA_BADLANDS = 247;
+    static final short BWG_SKYRIS_VALE = 248, BWG_TROPICAL_RAINFOREST = 249;
+    static final short BWG_TEMPERATE_GROVE = 250, BWG_WEEPING_WITCH_FOREST = 251;
+    static final short BWG_WHITE_MANGROVE_MARSHES = 252, BWG_WINDSWEPT_DESERT = 253;
+    static final short BWG_ZELKOVA_FOREST = 254;
 
     /**
      * Classify biomes for a grid of pixels.
@@ -222,6 +254,92 @@ public final class BiomeClassifier {
                 // Bare slope override for lowland/non-mountain cliffs
                 if (slopeBare && !isOcean && !mountains) {
                     biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
+                }
+
+                // BWG biome variant selection – spatially-coherent override using low-frequency noise
+                float nx = j0 + c, ny = i0 + r;
+                float vn = BIOME_VARIANT_NOISE.GetNoise(nx, ny); // [-1, 1]
+                if (biome == PLAINS) {
+                    if      (vn < -0.667f) biome = BWG_ALLIUM_SHRUBLAND;
+                    else if (vn < -0.333f) biome = BWG_ROSE_FIELDS;
+                    else if (vn <  0.0f  ) biome = BWG_COCONINO_MEADOW;
+                    else if (vn <  0.333f) biome = BWG_PUMPKIN_VALLEY;
+                    else if (vn <  0.667f) biome = BWG_SKYRIS_VALE;
+                } else if (biome == FOREST) {
+                    if      (vn < -0.8f  ) biome = BWG_BLACK_FOREST;
+                    else if (vn < -0.6f  ) biome = BWG_EBONY_WOODS;
+                    else if (vn < -0.4f  ) biome = BWG_FORGOTTEN_FOREST;
+                    else if (vn < -0.2f  ) biome = BWG_SAKURA_GROVE;
+                    else if (vn <  0.0f  ) biome = BWG_WEEPING_WITCH_FOREST;
+                    else if (vn <  0.2f  ) biome = BWG_ZELKOVA_FOREST;
+                    else if (vn <  0.4f  ) biome = BWG_OVERGROWTH_WOODLANDS;
+                    else if (vn <  0.6f  ) biome = BWG_CIKA_WOODS;
+                    else if (vn <  0.8f  ) biome = BWG_LUSH_STACKS;
+                } else if (biome == FOREST_SPARSE) {
+                    if      (vn < -0.333f) biome = BWG_ORCHARD;
+                    else if (vn <  0.333f) biome = BWG_TEMPERATE_GROVE;
+                } else if (biome == TAIGA) {
+                    if      (vn < -0.6f  ) biome = BWG_CONIFEROUS_FOREST;
+                    else if (vn < -0.2f  ) biome = BWG_MAPLE_TAIGA;
+                    else if (vn <  0.2f  ) biome = BWG_REDWOOD_THICKET;
+                    else if (vn <  0.6f  ) biome = BWG_ASPEN_BOREAL;
+                } else if (biome == TAIGA_SPARSE) {
+                    if      (vn < -0.333f) biome = BWG_CONIFEROUS_FOREST;
+                    else if (vn <  0.333f) biome = BWG_MAPLE_TAIGA;
+                } else if (biome == SNOWY_PLAINS) {
+                    if (vn < 0.0f) biome = BWG_CRIMSON_TUNDRA;
+                } else if (biome == SNOWY_TAIGA) {
+                    if      (vn < -0.333f) biome = BWG_FROSTED_CONIFEROUS_FOREST;
+                    else if (vn <  0.333f) biome = BWG_ASPEN_BOREAL;
+                } else if (biome == SNOWY_TAIGA_SPARSE) {
+                    if (vn < 0.0f) biome = BWG_FROSTED_TAIGA;
+                } else if (biome == DESERT) {
+                    if (hot) {
+                        if      (vn < -0.5f  ) biome = BWG_ATACAMA_OUTBACK;
+                        else if (vn <  0.0f  ) biome = BWG_MOJAVE_DESERT;
+                        else if (vn <  0.5f  ) biome = BWG_WINDSWEPT_DESERT;
+                    } else { // warm
+                        if      (vn < -0.667f) biome = BWG_AMARANTH_GRASSLAND;
+                        else if (vn < -0.333f) biome = BWG_PRAIRIE;
+                        else if (vn <  0.0f  ) biome = BWG_RED_ROCK_VALLEY;
+                        else if (vn <  0.333f) biome = BWG_RUGGED_BADLANDS;
+                        else if (vn <  0.667f) biome = BWG_SIERRA_BADLANDS;
+                    }
+                } else if (biome == SWAMP) {
+                    if (warm) {
+                        if      (vn < -0.5f  ) biome = BWG_BAYOU;
+                        else if (vn <  0.0f  ) biome = BWG_CYPRESS_SWAMPLANDS;
+                        else if (vn <  0.5f  ) biome = BWG_CYPRESS_WETLANDS;
+                        else if (vn <  0.75f ) biome = BWG_WHITE_MANGROVE_MARSHES;
+                    } else {
+                        if (vn < 0.0f) biome = BWG_PALE_BOG;
+                    }
+                } else if (biome == SAVANNA) {
+                    if      (vn < -0.6f  ) biome = BWG_ARAUCARIA_SAVANNA;
+                    else if (vn < -0.2f  ) biome = BWG_BAOBAB_SAVANNA;
+                    else if (vn <  0.2f  ) biome = BWG_IRONWOOD_GOUR;
+                    else if (vn <  0.6f  ) biome = BWG_FIRECRACKER_CHAPARRAL;
+                } else if (biome == JUNGLE) {
+                    if      (vn < -0.667f) biome = BWG_JACARANDA_JUNGLE;
+                    else if (vn < -0.333f) biome = BWG_TROPICAL_RAINFOREST;
+                    else if (vn <  0.0f  ) biome = BWG_ENCHANTED_TANGLE;
+                    else if (vn <  0.333f) biome = BWG_FRAGMENT_JUNGLE;
+                    else if (vn <  0.667f) biome = BWG_CRAG_GARDENS;
+                } else if (biome == GROVE) {
+                    if      (vn < -0.333f) biome = BWG_CANADIAN_SHIELD;
+                    else if (vn <  -0.28f) biome = BWG_ERODED_BOREALIS; // ~2.5% of grove tiles
+                } else if (biome == WINDSWEPT_HILLS) {
+                    if (vn < 0.0f) biome = BWG_BASALT_BARRERA;
+                } else if (biome == STONY_PEAKS) {
+                    if      (vn < -0.5f  ) biome = BWG_RED_ROCK_PEAKS;
+                    else if (vn <  0.0f  ) biome = BWG_DACITE_RIDGES;
+                    else if (vn <  0.5f  ) biome = BWG_HOWLING_PEAKS;
+                } else if (biome == FROZEN_PEAKS) {
+                    if (vn < 0.0f) biome = BWG_SHATTERED_GLACIER;
+                } else if (biome == WARM_OCEAN) {
+                    if      (vn < -0.5f  ) biome = BWG_RAINBOW_BEACH;
+                    else if (vn <  0.45f ) biome = BWG_DACITE_SHORE;
+                    else if (vn <  0.5f  ) biome = BWG_DEAD_SEA; // ~2.5% of warm ocean tiles
                 }
 
                 out[idx] = biome;
