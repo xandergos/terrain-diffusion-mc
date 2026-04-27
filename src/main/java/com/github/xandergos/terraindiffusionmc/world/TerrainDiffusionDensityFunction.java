@@ -13,6 +13,9 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
 
     public static final CodecHolder<TerrainDiffusionDensityFunction> CODEC_HOLDER = CodecHolder.of(CODEC);
 
+    private static final int TILE_SIZE  = TerrainDiffusionConfig.tileSize();
+    private static final int TILE_SHIFT = Integer.numberOfTrailingZeros(TILE_SIZE);
+
     @Override
     public double sample(DensityFunction.NoisePos pos) {
         return compute(pos);
@@ -23,16 +26,13 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
         int z = context.blockZ();
         int y = context.blockY();
 
-        int tileSize = TerrainDiffusionConfig.tileSize();
-        int tileShift = Integer.numberOfTrailingZeros(tileSize);
+        int tileX = x >> TILE_SHIFT;
+        int tileZ = z >> TILE_SHIFT;
 
-        int tileX = x >> tileShift;
-        int tileZ = z >> tileShift;
-
-        int blockStartX = tileX << tileShift;
-        int blockStartZ = tileZ << tileShift;
-        int blockEndX = blockStartX + tileSize;
-        int blockEndZ = blockStartZ + tileSize;
+        int blockStartX = tileX << TILE_SHIFT;
+        int blockStartZ = tileZ << TILE_SHIFT;
+        int blockEndX = blockStartX + TILE_SIZE;
+        int blockEndZ = blockStartZ + TILE_SIZE;
 
         HeightmapData data = LocalTerrainProvider.getInstance().fetchHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX);
         if (data == null || data.heightmap == null) {

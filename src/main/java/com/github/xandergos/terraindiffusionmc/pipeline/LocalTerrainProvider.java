@@ -6,8 +6,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,9 +55,8 @@ public final class LocalTerrainProvider {
     }
 
     private static final int MAX_CACHE_SIZE = 256;
-    private static final Object CACHE_LOCK = new Object();
-    private static final Map<String, HeightmapData> CACHE = new LinkedHashMap<>(16, 0.75f, true);
-    private static final Map<String, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Long, HeightmapData> CACHE = new ConcurrentHashMap<>(256);
+    private static final ConcurrentHashMap<Long, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
     /** Single thread for pipeline.get() so MemoryTileStore is not accessed concurrently. */
     private static final ExecutorService INFERENCE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "terrain-diffusion-inference");
@@ -87,7 +84,7 @@ public final class LocalTerrainProvider {
         } else if (instanceSeed != seed) {
             INSTANCE.pipeline.setSeed(seed);
             instanceSeed = seed;
-            synchronized (CACHE_LOCK) { CACHE.clear(); }
+            CACHE.clear();
             PENDING.clear();
         }
     }
@@ -110,9 +107,7 @@ public final class LocalTerrainProvider {
     }
 
     public static void clearCache() {
-        synchronized (CACHE_LOCK) {
-            CACHE.clear();
-        }
+        CACHE.clear();
         PENDING.clear();
     }
 
@@ -153,7 +148,7 @@ public final class LocalTerrainProvider {
             LocalTerrainProvider provider = getInstance();
             provider.pipeline.setSeed(newSeed);
             instanceSeed = newSeed;
-            synchronized (CACHE_LOCK) { CACHE.clear(); }
+            CACHE.clear();
             PENDING.clear();
             return null;
         });
@@ -176,12 +171,27 @@ public final class LocalTerrainProvider {
      * Blocks the calling thread until the tile is ready (one tile can take 10–30+ seconds).
      * If the caller is the server or a chunk worker, the game will stall until this returns.
      */
-    public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
-        String key = i1 + "," + j1 + "," + i2 + "," + j2;
-        synchronized (CACHE_LOCK) {
-            HeightmapData cached = CACHE.get(key);
-            if (cached != null) return cached;
+    /** Pack (i1, j1) into a single long cache key. i2/j2 are always i1+tileSize / j1+tileSize. */
+    private static long tileKey(int i1, int j1) {
+        return ((long) i1 << 32) | (j1 & 0xFFFFFFFFL);
+    }
+
+    private static void putAndEvict(long key, HeightmapData data) {
+        CACHE.put(key, data);
+        int excess = CACHE.size() - MAX_CACHE_SIZE;
+        if (excess > 0) {
+            Iterator<Long> it = CACHE.keySet().iterator();
+            for (int i = 0; i < excess && it.hasNext(); i++) {
+                it.next();
+                it.remove();
+            }
         }
+    }
+
+    public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
+        long key = tileKey(i1, j1);
+        HeightmapData cached = CACHE.get(key);
+        if (cached != null) return cached;
 
         int scale = WorldScaleManager.getCurrentScale();
         FutureTask<HeightmapData> task = new FutureTask<>(() -> {
@@ -189,29 +199,20 @@ public final class LocalTerrainProvider {
             HeightmapData data = scale <= 1
                     ? handle1x(i1, j1, i2, j2)
                     : handleUpsampled(i1, j1, i2, j2, scale);
-            long computedWindowCountAfter = pipeline.getTotalComputedWindowCount();
-
-            long newlyComputedWindowCount = computedWindowCountAfter - computedWindowCountBefore;
-            int regionWidth = j2 - j1;
-            int regionHeight = i2 - i1;
+            long newlyComputedWindowCount = pipeline.getTotalComputedWindowCount() - computedWindowCountBefore;
             LOG.info(
                     "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
-                    OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
-            synchronized (CACHE_LOCK) {
-                CACHE.put(key, data);
-                evictLruTo(MAX_CACHE_SIZE);
-            }
+                    OnnxModel.getResolvedInferenceProvider(), j2 - j1, i2 - i1, newlyComputedWindowCount);
+            putAndEvict(key, data);
             PENDING.remove(key);
             return data;
         });
         Future<HeightmapData> existing = PENDING.putIfAbsent(key, task);
         FutureTask<HeightmapData> toRun = (existing == null) ? task : (FutureTask<HeightmapData>) existing;
         if (existing == null) {
-            int regionWidth = j2 - j1;
-            int regionHeight = i2 - i1;
             LOG.info(
                     "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{}",
-                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight);
+                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, j2 - j1, i2 - i1);
             INFERENCE_EXECUTOR.submit(toRun);
 
             // Speculatively warm the four adjacent tiles while this one generates.
@@ -233,14 +234,6 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private static void evictLruTo(int maxSize) {
-        Iterator<Map.Entry<String, HeightmapData>> it = CACHE.entrySet().iterator();
-        while (CACHE.size() > maxSize && it.hasNext()) {
-            it.next();
-            it.remove();
-        }
-    }
-
     /**
      * Submit a tile for background generation without blocking the caller.
      * No-ops if the tile is already cached or in flight.
@@ -248,19 +241,13 @@ public final class LocalTerrainProvider {
      * same region attaches to it rather than spawning a duplicate inference run.
      */
     private void prefetchIfAbsent(int i1, int j1, int i2, int j2, int scale) {
-        String key = i1 + "," + j1 + "," + i2 + "," + j2;
-        synchronized (CACHE_LOCK) {
-            if (CACHE.containsKey(key)) return;
-        }
-        if (PENDING.containsKey(key)) return;
+        long key = tileKey(i1, j1);
+        if (CACHE.containsKey(key) || PENDING.containsKey(key)) return;
         FutureTask<HeightmapData> task = new FutureTask<>(() -> {
             HeightmapData data = scale <= 1
                     ? handle1x(i1, j1, i2, j2)
                     : handleUpsampled(i1, j1, i2, j2, scale);
-            synchronized (CACHE_LOCK) {
-                CACHE.put(key, data);
-                evictLruTo(MAX_CACHE_SIZE);
-            }
+            putAndEvict(key, data);
             PENDING.remove(key);
             return data;
         });

@@ -93,6 +93,9 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     private static final RegistryKey<Biome> BWG_WINDSWEPT_DESERT         = bwg("windswept_desert");
     private static final RegistryKey<Biome> BWG_ZELKOVA_FOREST           = bwg("zelkova_forest");
 
+    private static final int TILE_SIZE  = TerrainDiffusionConfig.tileSize();
+    private static final int TILE_SHIFT = Integer.numberOfTrailingZeros(TILE_SIZE);
+
     public static final MapCodec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.mapCodec((instance) ->
             instance.group(
                     RegistryOps.getEntryLookupCodec(RegistryKeys.BIOME)
@@ -100,7 +103,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
 
 
     private RegistryEntryLookup<Biome> biomeLookup;
-    private Map<Short, RegistryEntry<Biome>> biomeIdMap = null;
+    private volatile Map<Short, RegistryEntry<Biome>> biomeIdMap = null;
 
     public TerrainDiffusionBiomeSource(RegistryEntryLookup<Biome> biomeLookup) {
         this.biomeLookup = biomeLookup;
@@ -117,7 +120,9 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     }
 
     private void requireBiomeIdMap() {
-        if (biomeIdMap == null) {
+        if (biomeIdMap != null) return;
+        synchronized (this) {
+            if (biomeIdMap != null) return;
             Map<Short, RegistryEntry<Biome>> map = new HashMap<>();
             // Vanilla biomes
             map.put((short)  1, this.biomeLookup.getOrThrow(BiomeKeys.PLAINS));
@@ -218,16 +223,13 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         int blockX = BiomeCoords.toBlock(x);
         int blockZ = BiomeCoords.toBlock(z);
 
-        int tileSize = TerrainDiffusionConfig.tileSize();
-        int tileShift = Integer.numberOfTrailingZeros(tileSize);
+        int tileX = blockX >> TILE_SHIFT;
+        int tileZ = blockZ >> TILE_SHIFT;
 
-        int tileX = blockX >> tileShift;
-        int tileZ = blockZ >> tileShift;
-
-        int blockStartX = tileX << tileShift;
-        int blockStartZ = tileZ << tileShift;
-        int blockEndX = blockStartX + tileSize;
-        int blockEndZ = blockStartZ + tileSize;
+        int blockStartX = tileX << TILE_SHIFT;
+        int blockStartZ = tileZ << TILE_SHIFT;
+        int blockEndX = blockStartX + TILE_SIZE;
+        int blockEndZ = blockStartZ + TILE_SIZE;
 
         HeightmapData data = LocalTerrainProvider.getInstance().fetchHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX);
         if (data != null && data.biomeIds != null) {
