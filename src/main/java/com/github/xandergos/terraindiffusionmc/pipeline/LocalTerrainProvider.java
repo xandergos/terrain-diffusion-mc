@@ -234,6 +234,20 @@ public final class LocalTerrainProvider {
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
         float[][] out = pipeline.get(i1, j1, i2, j2, true);
         float[] elevFlat = out[0];
+
+        // Rivers integration
+        float[] flow = computeFlowAccumulation(elevFlat, H, W);
+        boolean[] riverMask = computeRiverMask(flow, H * W);
+        carveRivers(elevFlat, riverMask, H, W);
+
+        // quick hack to fix later
+        float waterLevel = 0f;
+        for (int i = 0; i < elevFlat.length; i++) {
+            if (riverMask[i]) {
+                elevFlat[i] = Math.min(elevFlat[i], waterLevel - 1f);
+            }
+        }
+
         float[] climate  = out[1];
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
@@ -275,6 +289,20 @@ public final class LocalTerrainProvider {
         int cropJ1  = padUp + offsetJ;
 
         float[] elevSmooth = cropFlat(elevUp, cropI1,     cropJ1,     H,   W,   nH * scale, nW * scale);
+
+        // Rivers integration
+        float[] flow = computeFlowAccumulation(elevSmooth, H, W);
+        boolean[] riverMask = computeRiverMask(flow, H * W);
+        carveRivers(elevSmooth, riverMask, H, W);
+
+        // quick hack to fix later
+        float waterLevel = 0f;
+        for (int i = 0; i < elevSmooth.length; i++) {
+            if (riverMask[i]) {
+                elevSmooth[i] = Math.min(elevSmooth[i], waterLevel - 1f);
+            }
+        }
+
         float[] elevPadded = cropFlat(elevUp, cropI1 - 1, cropJ1 - 1, H+2, W+2, nH * scale, nW * scale);
 
         // Upsample climate (4, nH, nW) → (4, H, W)
@@ -289,6 +317,92 @@ public final class LocalTerrainProvider {
     // =========================================================================
     // Helpers
     // =========================================================================
+
+    private static void carveRivers(
+            float[] height,
+            boolean[] riverMask,
+            int H, int W
+    ) {
+        for (int r = 1; r < H - 1; r++) {
+            for (int c = 1; c < W - 1; c++) {
+                int idx = r * W + c;
+
+                if (!riverMask[idx]) continue;
+
+                float depth = 2.0f; // base depth
+
+                /*
+                * Widen slightly
+                * */
+                for (int dr = -1; dr <= 1; dr++) {
+                    for (int dc = -1; dc <= 1; dc++) {
+                        int ni = (r + dr) * W + (c + dc);
+                        height[ni] -= depth * 0.6f;
+                    }
+                }
+
+                /*
+                * center deeper
+                * */
+                height[idx] -= depth;
+            }
+        }
+    }
+
+    private static boolean[] computeRiverMask(float[] flow, int size) {
+        boolean[] mask = new boolean[size];
+
+        float threshold = 20f; // tune this
+
+        for (int i = 0; i < size; i++) {
+            mask[i] = flow[i] > threshold;
+        }
+
+        return mask;
+    }
+
+    private static float[] computeFlowAccumulation(float[] height, int H, int W) {
+        float[] flow = new float[H * W];
+
+        for (int i = 0; i < flow.length; i++) {
+            flow[i] = 1f; // each cell contributes itself
+        }
+
+        /*
+        * Naive: iterate multiple passes downhill
+        * */
+        for (int pass = 0; pass < 8; pass++) {
+            for (int r = 1; r < H - 1; r++) {
+                for (int c = 1; c < W - 1; c++) {
+                    int idx = r * W + c;
+
+                    float h = height[idx];
+
+                    int bestIdx = idx;
+                    float bestH = h;
+
+                    /*
+                    * Find lowest neighbor
+                    * */
+                    for (int dr = -1; dr <= 1; dr++) {
+                        for (int dc = -1; dc <= 1; dc++) {
+                            int ni = (r + dr) * W + (c + dc);
+                            if (height[ni] < bestH) {
+                                bestH = height[ni];
+                                bestIdx = ni;
+                            }
+                        }
+                    }
+
+                    if (bestIdx != idx) {
+                        flow[bestIdx] += flow[idx] * 0.5f;
+                    }
+                }
+            }
+        }
+
+        return flow;
+    }
 
     private float[] addElevationNoise(float[] elevSmooth, float[] elevPadded,
                                        int i1, int j1, int H, int W, float pixelSizeM) {
