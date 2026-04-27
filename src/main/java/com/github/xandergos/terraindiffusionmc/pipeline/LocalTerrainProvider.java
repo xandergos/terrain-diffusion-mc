@@ -92,15 +92,21 @@ public final class LocalTerrainProvider {
         }
     }
 
-    public static synchronized LocalTerrainProvider getInstance() {
-        if (INSTANCE == null) {
-            PipelineModels.awaitLoad();
-            PipelineModels models = PipelineModels.getInstance();
-            if (models == null) throw new IllegalStateException("PipelineModels failed to load");
-            INSTANCE = new LocalTerrainProvider(0L, models);
-            instanceSeed = 0L;
+    public static LocalTerrainProvider getInstance() {
+        // Fast path: volatile read avoids acquiring the class monitor on every density-function
+        // evaluation (called by every chunk-generation thread, including C2ME worker threads).
+        LocalTerrainProvider instance = INSTANCE;
+        if (instance != null) return instance;
+        synchronized (LocalTerrainProvider.class) {
+            if (INSTANCE == null) {
+                PipelineModels.awaitLoad();
+                PipelineModels models = PipelineModels.getInstance();
+                if (models == null) throw new IllegalStateException("PipelineModels failed to load");
+                INSTANCE = new LocalTerrainProvider(0L, models);
+                instanceSeed = 0L;
+            }
+            return INSTANCE;
         }
-        return INSTANCE;
     }
 
     public static void clearCache() {
@@ -207,6 +213,17 @@ public final class LocalTerrainProvider {
                     "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{}",
                     OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight);
             INFERENCE_EXECUTOR.submit(toRun);
+
+            // Speculatively warm the four adjacent tiles while this one generates.
+            // Guard: only prefetch when the queue is nearly empty so bulk LOD requests
+            // from mods like Voxy don't cascade into exponential prefetch storms.
+            if (PENDING.size() <= 2) {
+                int tH = i2 - i1, tW = j2 - j1;
+                prefetchIfAbsent(i1 - tH, j1, i2 - tH, j2, scale);
+                prefetchIfAbsent(i1 + tH, j1, i2 + tH, j2, scale);
+                prefetchIfAbsent(i1, j1 - tW, i2, j2 - tW, scale);
+                prefetchIfAbsent(i1, j1 + tW, i2, j2 + tW, scale);
+            }
         }
         try {
             return toRun.get();
@@ -221,6 +238,34 @@ public final class LocalTerrainProvider {
         while (CACHE.size() > maxSize && it.hasNext()) {
             it.next();
             it.remove();
+        }
+    }
+
+    /**
+     * Submit a tile for background generation without blocking the caller.
+     * No-ops if the tile is already cached or in flight.
+     * The resulting Future is stored in PENDING so any later fetchHeightmap() call for the
+     * same region attaches to it rather than spawning a duplicate inference run.
+     */
+    private void prefetchIfAbsent(int i1, int j1, int i2, int j2, int scale) {
+        String key = i1 + "," + j1 + "," + i2 + "," + j2;
+        synchronized (CACHE_LOCK) {
+            if (CACHE.containsKey(key)) return;
+        }
+        if (PENDING.containsKey(key)) return;
+        FutureTask<HeightmapData> task = new FutureTask<>(() -> {
+            HeightmapData data = scale <= 1
+                    ? handle1x(i1, j1, i2, j2)
+                    : handleUpsampled(i1, j1, i2, j2, scale);
+            synchronized (CACHE_LOCK) {
+                CACHE.put(key, data);
+                evictLruTo(MAX_CACHE_SIZE);
+            }
+            PENDING.remove(key);
+            return data;
+        });
+        if (PENDING.putIfAbsent(key, task) == null) {
+            INFERENCE_EXECUTOR.submit(task);
         }
     }
 
