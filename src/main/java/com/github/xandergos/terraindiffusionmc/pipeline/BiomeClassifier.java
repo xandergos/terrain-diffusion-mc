@@ -33,11 +33,16 @@ public final class BiomeClassifier {
     }
 
     // Biome IDs
-    static final short PLAINS = 1, SNOWY_PLAINS = 3, DESERT = 5, SWAMP = 6;
-    static final short FOREST = 8, TAIGA = 15, SNOWY_TAIGA = 16, SAVANNA = 17;
-    static final short WINDSWEPT_HILLS = 19, JUNGLE = 23, BADLANDS = 26, MEADOW = 29;
-    static final short GROVE = 31, SNOWY_SLOPES = 32, FROZEN_PEAKS = 33, STONY_PEAKS = 35;
-    static final short WARM_OCEAN = 41, OCEAN = 44, COLD_OCEAN = 46, FROZEN_OCEAN = 48;
+    static final short PLAINS = 1, SUNFLOWER_PLAINS = 2, SNOWY_PLAINS = 3, ICE_SPIKES = 4, DESERT = 5;
+    static final short SWAMP = 6, MANGROVE_SWAMP = 7, FOREST = 8, FLOWER_FOREST = 9, BIRCH_FOREST = 10;
+    static final short DARK_FOREST = 11, OLD_GROWTH_BIRCH_FOREST = 12, OLD_GROWTH_PINE_TAIGA = 13, OLD_GROWTH_SPRUCE_TAIGA = 14, TAIGA = 15;
+    static final short SNOWY_TAIGA = 16, SAVANNA = 17, SAVANNA_PLATEAU = 18, WINDSWEPT_HILLS = 19, WINDSWEPT_GRAVELY_HILLS = 20;
+    static final short WINDSWEPT_FOREST = 21, WINDSWEPT_SAVANNA = 22, JUNGLE = 23, SPARSE_JUNGLE = 24, BAMBOO_JUNGLE = 25;
+    static final short BADLANDS = 26, ERODED_BADLANDS = 27, WOODED_BADLANDS = 28, MEADOW = 29, CHERRY_GROVE = 30;
+    static final short GROVE = 31, SNOWY_SLOPES = 32, FROZEN_PEAKS = 33, JAGGED_PEAKS = 34, STONY_PEAKS = 35;
+    static final short RIVER = 36, FROZEN_RIVER = 37, BEACH = 38, SNOWY_BEACH = 39, STONY_SHORE = 40;
+    static final short WARM_OCEAN = 41, LUKEWARM_OCEAN = 42, DEEP_LUKEWARM_OCEAN = 43, OCEAN = 44, DEEP_OCEAN = 45;
+    static final short COLD_OCEAN = 46, DEEP_COLD_OCEAN = 47, FROZEN_OCEAN = 48, DEEP_FROZEN_OCEAN = 49, MUSHROOM_FIELDS = 50;
     static final short FOREST_SPARSE = 108, TAIGA_SPARSE = 115, SNOWY_TAIGA_SPARSE = 116;
 
     /**
@@ -156,23 +161,32 @@ public final class BiomeClassifier {
                 boolean hasSnow = snowTemp < 0f && precip > 150f && !isSteep;
 
                 // Elevation/temp bands
-                boolean isOcean   = elevVal < 0f;
-                boolean mountains = altM > 2500f;
-                boolean lowland   = altM < 200f;
-                boolean frozen    = temp < -5f;
-                boolean cold      = temp >= -5f && temp < 5f;
-                boolean cool      = temp >= 5f  && temp < 12f;
-                boolean temperate = temp >= 12f && temp < 20f;
-                boolean warm      = temp >= 20f && temp < 26f;
-                boolean hot       = temp >= 26f;
+                boolean isOcean     = elevVal < 0f;
+                boolean isDeepOcean = elevVal < -100f;
+                boolean mountains   = altM > 2500f;
+                boolean lowland     = altM < 200f;
+                boolean frozen      = temp < -5f;
+                boolean cold        = temp >= -5f && temp < 5f;
+                boolean cool        = temp >= 5f  && temp < 12f;
+                boolean temperate   = temp >= 12f && temp < 20f;
+                boolean warm        = temp >= 20f && temp < 26f;
+                boolean hot         = temp >= 26f;
 
                 short biome = PLAINS;
 
                 if (isOcean) {
-                    if (frozen) biome = FROZEN_OCEAN;
-                    else if (cold) biome = COLD_OCEAN;
-                    else if (warm || hot) biome = WARM_OCEAN;
-                    else biome = OCEAN;
+                    if (isDeepOcean) {
+                        if (frozen) biome = DEEP_FROZEN_OCEAN;
+                        else if (cold) biome = DEEP_COLD_OCEAN;
+                        else if (warm || hot) biome = DEEP_LUKEWARM_OCEAN;
+                        else biome = DEEP_OCEAN;
+                    } else {
+                        if (frozen) biome = FROZEN_OCEAN;
+                        else if (cold) biome = COLD_OCEAN;
+                        else if (warm) biome = LUKEWARM_OCEAN;
+                        else if (hot) biome = WARM_OCEAN;
+                        else biome = OCEAN;
+                    }
                 } else if (mountains) {
                     if (slopeBare) {
                         biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
@@ -222,6 +236,96 @@ public final class BiomeClassifier {
                 // Bare slope override for lowland/non-mountain cliffs
                 if (slopeBare && !isOcean && !mountains) {
                     biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
+                }
+
+                if (!isOcean && !mountains && !slopeBare) {
+                    if (treesNone && !hasSnow && !barren && treeMoisture >= 0.35f && precip >= 350f && cool) {
+                        biome = SUNFLOWER_PLAINS;
+                    }
+
+                    if (treesDense && !lowland && !cool && !cold && !warm && !hot && temperate) {
+                        biome = BIRCH_FOREST;
+                    }
+
+                    if (treesDense && temperate && precip > 600f) {
+                        biome = DARK_FOREST;
+                    }
+
+                    // Flower Forest condition
+                    if (treesDense && warm && precip > 500f) {
+                        biome = FLOWER_FOREST;
+                    }
+
+                    // Old Growth Forest conditions
+                    if (treesDense && cold && precip > 400f) {
+                        biome = OLD_GROWTH_SPRUCE_TAIGA;
+                    }
+                    if (treesDense && cool && precip > 500f) {
+                        biome = OLD_GROWTH_BIRCH_FOREST;
+                    }
+
+                    // Taiga variants
+                    if (treesDense && cold && !lowland) {
+                        biome = OLD_GROWTH_PINE_TAIGA;
+                    }
+
+                    // Savanna Plateau
+                    if (treesSparse && warm && !lowland && !slopeMedium) {
+                        biome = SAVANNA_PLATEAU;
+                    }
+
+                    // Windswept variants
+                    if (slopeMedium && treesSparse && warm && !lowland) {
+                        biome = WINDSWEPT_SAVANNA;
+                    }
+                    if (slopeMedium && treesForest && temperate) {
+                        biome = WINDSWEPT_FOREST;
+                    }
+                    if (slopeMedium && barren && !lowland) {
+                        biome = WINDSWEPT_GRAVELY_HILLS;
+                    }
+
+                    // Jungle variants
+                    if (treesDense && hot && precip > 600f) {
+                        biome = BAMBOO_JUNGLE;
+                    }
+                    if (treesDense && hot && precip < 600f) {
+                        biome = SPARSE_JUNGLE;
+                    }
+
+                    // Badlands variants
+                    if (hot && barren && slope > 0.3f) {
+                        biome = ERODED_BADLANDS;
+                    }
+                    if (hot && !barren && precip > 200f) {
+                        biome = WOODED_BADLANDS;
+                    }
+
+                    // Meadow condition
+                    if (treesForest && cool && precip > 500f && !barren) {
+                        biome = MEADOW;
+                    }
+
+                    // Cherry Grove condition
+                    if (treesForest && warm && precip > 400f && precip < 800f) {
+                        biome = CHERRY_GROVE;
+                    }
+
+                    // Ice Spikes condition
+                    if (treesNone && frozen && precip > 100f && slope > 0.5f) {
+                        biome = ICE_SPIKES;
+                    }
+
+                    // Beach conditions
+                    if (elevVal >= -5f && elevVal < 20f && !frozen) {
+                        biome = BEACH;
+                    }
+                    if (elevVal >= -5f && elevVal < 20f && frozen) {
+                        biome = SNOWY_BEACH;
+                    }
+                    if (elevVal >= -5f && elevVal < 20f && slope > 0.5f) {
+                        biome = STONY_SHORE;
+                    }
                 }
 
                 out[idx] = biome;
