@@ -4,6 +4,9 @@
   "terrain-diffusion-mc.world_settings.open_button": "Terrain Settings",
   "terrain-diffusion-mc.world_settings.scale": "World Scale",
   "terrain-diffusion-mc.world_settings.world_scale_description": "Set World Scale for this world.",
-  "terrain-diffusion-mc.world_settings.scale_error": "Scale must be an integer >= 1"
-}
+  "terrain-diffusion-mc.world_settings.scale_error": "Scale must be an integer >= 1",
 
+  "key.categories.terrain-diffusion-mc": "Terrain Diffusion",
+  "key.terrain-diffusion-mc.toggle_basin_overlay": "Toggle Irrigation Basin Overlay",
+  "key.terrain-diffusion-mc.open_basin_settings": "Open Irrigation Basin Settings"
+}
