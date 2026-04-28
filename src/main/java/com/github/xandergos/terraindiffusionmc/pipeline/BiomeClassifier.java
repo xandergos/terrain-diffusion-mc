@@ -1,5 +1,8 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import net.minecraft.text.MutableText;
+import net.minecraft.text.Text;
+
 /**
  * Rule-based biome classifier port of _classify_biome in minecraft_api.py.
  *
@@ -123,14 +126,14 @@ public final class BiomeClassifier {
                     float x = (5f - temp) / amplitude;
                     if (x <= -1f) growingSeason = 365f;
                     else if (x >= 1f) growingSeason = 0f;
-                    else growingSeason = 365f * (0.5f - (float) Math.asin(Math.max(-1f, Math.min(1f, x))) / (float) Math.PI);
+                    else growingSeason = 365f * (0.5f - (float) Math.asin(Math.clamp(x, -1f, 1f)) / (float) Math.PI);
                 }
 
-                float gsFactor = Math.max(0f, Math.min(1f, (growingSeason - 60f) / (150f - 60f)));
+                float gsFactor = Math.clamp((growingSeason - 60f) / (150f - 60f), 0f, 1f);
                 float effTreeMoisture = treeMoisture * gsFactor;
 
                 // Slope-dependent bare threshold
-                float moistureFactor = Math.max(0f, Math.min(1f, (treeMoisture - 0.35f) / 0.45f));
+                float moistureFactor = Math.clamp((treeMoisture - 0.35f) / 0.45f, 0f, 1f);
                 float bareThreshold = 0.7f + (1.19f - 0.7f) * moistureFactor;
 
                 // Tree coverage classification
@@ -161,8 +164,8 @@ public final class BiomeClassifier {
                 boolean hasSnow = snowTemp < 0f && precip > 150f && !isSteep;
 
                 // Elevation/temp bands
-                boolean isOcean     = elevVal < 0f;
-                boolean isDeepOcean = elevVal < -100f;
+                boolean isOcean     = elevVal < -5f;
+                boolean isDeepOcean = elevVal < -500f;
                 boolean mountains   = altM > 2500f;
                 boolean lowland     = altM < 200f;
                 boolean frozen      = temp < -5f;
@@ -172,7 +175,7 @@ public final class BiomeClassifier {
                 boolean warm        = temp >= 20f && temp < 26f;
                 boolean hot         = temp >= 26f;
 
-                short biome = PLAINS;
+                short biome;
 
                 if (isOcean) {
                     if (isDeepOcean) {
@@ -183,149 +186,81 @@ public final class BiomeClassifier {
                     } else {
                         if (frozen) biome = FROZEN_OCEAN;
                         else if (cold) biome = COLD_OCEAN;
-                        else if (warm) biome = LUKEWARM_OCEAN;
+                        else if (warm || temperate) biome = LUKEWARM_OCEAN;
                         else if (hot) biome = WARM_OCEAN;
                         else biome = OCEAN;
                     }
-                } else if (mountains) {
-                    if (slopeBare) {
-                        biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
-                    } else if (hasSnow) {
-                        if (treesNone) biome = SNOWY_SLOPES;
-                        else if (treesSparse || treesForest) biome = SNOWY_TAIGA_SPARSE;
-                        else biome = SNOWY_TAIGA;
-                    } else if (treesNone) {
-                        if (barren) biome = WINDSWEPT_HILLS;
-                        else if (treeMoisture < 0.35f || precip < 350f) biome = GROVE;
-                        else biome = PLAINS;
-                    } else if (treesSparse || treesForest) {
-                        biome = TAIGA_SPARSE;
+                } else if (lowland) {
+                    if (frozen || cold) {
+                        if (isSteep) biome = STONY_SHORE;
+                        else {
+                            if (hasSnow) {
+                                if (treesNone) biome = SNOWY_BEACH;
+                                else if (treesSparse) biome = SNOWY_TAIGA_SPARSE;
+                                else if (treesDense || treesForest) biome = SNOWY_TAIGA;
+                                else biome = SNOWY_BEACH;
+                            } else {
+                                if (treesNone) biome = BEACH;
+                                else if (treesSparse) biome = TAIGA_SPARSE;
+                                else if (treesDense || treesForest) biome = TAIGA;
+                                else biome = BEACH;
+                            }
+                        }
+                    } else if (cool) {
+                        if (isSteep) biome = STONY_SHORE;
+                        else {
+                            if (treesNone) biome = STONY_SHORE;
+                            else if (treesSparse) biome = PLAINS;
+                            else if (treesDense) biome = FOREST_SPARSE;
+                            else if (treesForest || treesRainforest) biome = BIRCH_FOREST;
+                            else biome = STONY_SHORE;
+                        }
+                    } else if (temperate) {
+                        if (isSteep) biome = STONY_SHORE;
+                        else if (slopeBare) {
+                            if (treesNone || treesSparse) biome = BEACH;
+                            else if (treesDense) biome = BIRCH_FOREST;
+                            else if (treesForest) biome = FOREST;
+                            else if (treesRainforest) biome = JUNGLE;
+                            else biome = BEACH;
+                        } else if (slopeMedium) {
+                            if (treesNone || treesSparse) biome = STONY_SHORE;
+                            else if (treesDense) biome = FOREST_SPARSE;
+                            else if (treesForest) biome = FOREST;
+                            else if (treesRainforest) biome = JUNGLE;
+                            else biome = STONY_SHORE;
+                        } else {
+                            if (elevVal <= 75f) biome = BEACH;
+                            else biome = PLAINS;
+                        }
+                    } else if (warm) {
+                        if (isSteep) biome = STONY_SHORE;
+                        else if (slopeBare) {
+                            if (treesNone || treesSparse) biome = BEACH;
+                            else biome = SAVANNA_PLATEAU;
+                        } else if (slopeMedium) {
+                            if (treesNone || treesSparse) biome = DESERT;
+                            else biome = SAVANNA;
+                        } else {
+                            if (elevVal <= 75f) biome = BEACH;
+                            else biome = SUNFLOWER_PLAINS;
+                        }
                     } else {
-                        biome = TAIGA;
+                        if (isSteep) biome = STONY_SHORE;
+                        else if (slopeBare) {
+                            if (treesNone || treesSparse) biome = BADLANDS;
+                            else biome = DESERT;
+                        } else if (slopeMedium) {
+                            if (treesNone || treesSparse) biome = BADLANDS;
+                            else if (treesDense) biome = SAVANNA;
+                            else biome = DESERT;
+                        } else {
+                            if (elevVal <= 75f) biome = DESERT;
+                            else biome = ERODED_BADLANDS;
+                        }
                     }
                 } else {
-                    // Lowland/midland
-                    if (hasSnow && treesNone) {
-                        biome = SNOWY_PLAINS;
-                    } else if (hasSnow) {
-                        biome = (treesSparse || treesForest) ? SNOWY_TAIGA_SPARSE : SNOWY_TAIGA;
-                    } else if (treesNone) {
-                        if (warm || hot) biome = DESERT;
-                        else if (barren && !lowland && (cold || cool || temperate)) biome = GROVE;
-                        else if (treeMoisture < 0.35f || precip < 350f) biome = GROVE;
-                        else biome = PLAINS;
-                    } else if (treesSparse || treesForest) {
-                        if (hot) biome = JUNGLE;
-                        else if (warm && treesSparse && !slopeMedium) biome = SAVANNA;
-                        else if (warm && treesForest) biome = FOREST_SPARSE;
-                        else if (temperate) biome = FOREST_SPARSE;
-                        else biome = TAIGA_SPARSE;
-                    } else if (treesDense) {
-                        if (hot) biome = JUNGLE;
-                        else if (warm && lowland) biome = SWAMP;
-                        else if (cool || cold) biome = TAIGA;
-                        else biome = FOREST;
-                    } else { // rainforest
-                        if (hot || (warm && temp >= 18f && tStd < 5f)) biome = JUNGLE;
-                        else if (lowland) biome = SWAMP;
-                        else if (cool || cold) biome = TAIGA;
-                        else biome = FOREST;
-                    }
-                }
-
-                // Bare slope override for lowland/non-mountain cliffs
-                if (slopeBare && !isOcean && !mountains) {
-                    biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
-                }
-
-                if (!isOcean && !mountains && !slopeBare) {
-                    if (treesNone && !hasSnow && !barren && treeMoisture >= 0.35f && precip >= 350f && cool) {
-                        biome = SUNFLOWER_PLAINS;
-                    }
-
-                    if (treesDense && !lowland && !cool && !cold && !warm && !hot && temperate) {
-                        biome = BIRCH_FOREST;
-                    }
-
-                    if (treesDense && temperate && precip > 600f) {
-                        biome = DARK_FOREST;
-                    }
-
-                    // Flower Forest condition
-                    if (treesDense && warm && precip > 500f) {
-                        biome = FLOWER_FOREST;
-                    }
-
-                    // Old Growth Forest conditions
-                    if (treesDense && cold && precip > 400f) {
-                        biome = OLD_GROWTH_SPRUCE_TAIGA;
-                    }
-                    if (treesDense && cool && precip > 500f) {
-                        biome = OLD_GROWTH_BIRCH_FOREST;
-                    }
-
-                    // Taiga variants
-                    if (treesDense && cold && !lowland) {
-                        biome = OLD_GROWTH_PINE_TAIGA;
-                    }
-
-                    // Savanna Plateau
-                    if (treesSparse && warm && !lowland && !slopeMedium) {
-                        biome = SAVANNA_PLATEAU;
-                    }
-
-                    // Windswept variants
-                    if (slopeMedium && treesSparse && warm && !lowland) {
-                        biome = WINDSWEPT_SAVANNA;
-                    }
-                    if (slopeMedium && treesForest && temperate) {
-                        biome = WINDSWEPT_FOREST;
-                    }
-                    if (slopeMedium && barren && !lowland) {
-                        biome = WINDSWEPT_GRAVELY_HILLS;
-                    }
-
-                    // Jungle variants
-                    if (treesDense && hot && precip > 600f) {
-                        biome = BAMBOO_JUNGLE;
-                    }
-                    if (treesDense && hot && precip < 600f) {
-                        biome = SPARSE_JUNGLE;
-                    }
-
-                    // Badlands variants
-                    if (hot && barren && slope > 0.3f) {
-                        biome = ERODED_BADLANDS;
-                    }
-                    if (hot && !barren && precip > 200f) {
-                        biome = WOODED_BADLANDS;
-                    }
-
-                    // Meadow condition
-                    if (treesForest && cool && precip > 500f && !barren) {
-                        biome = MEADOW;
-                    }
-
-                    // Cherry Grove condition
-                    if (treesForest && warm && precip > 400f && precip < 800f) {
-                        biome = CHERRY_GROVE;
-                    }
-
-                    // Ice Spikes condition
-                    if (treesNone && frozen && precip > 100f && slope > 0.5f) {
-                        biome = ICE_SPIKES;
-                    }
-
-                    // Beach conditions
-                    if (elevVal >= -5f && elevVal < 20f && !frozen) {
-                        biome = BEACH;
-                    }
-                    if (elevVal >= -5f && elevVal < 20f && frozen) {
-                        biome = SNOWY_BEACH;
-                    }
-                    if (elevVal >= -5f && elevVal < 20f && slope > 0.5f) {
-                        biome = STONY_SHORE;
-                    }
+                    biome = PLAINS;
                 }
 
                 out[idx] = biome;
@@ -354,5 +289,94 @@ public final class BiomeClassifier {
             }
         }
         return slope;
+    }
+
+    public static MutableText getDebugText(float elev, float temp, float tSeason, float precip, float pCV, float slope) {
+        MutableText text = Text.literal("=== Biome Classification Debug ===\n");
+
+        float tStd = tSeason / 100f;
+        float tEff = Math.max(0f, temp + 0.5f * tStd);
+        float pet = Math.max(250f, 250f + 25f * tEff + 0.7f * tEff * tEff);
+        float aridity = precip / Math.max(1f, pet);
+        float seasonPenalty = 1f - 0.35f * Math.min(1f, pCV / 100f);
+        float treeMoisture = aridity * seasonPenalty;
+
+        float amplitude = tStd * 1.414f;
+        float growingSeason;
+        if (amplitude < 0.1f) {
+            growingSeason = temp > 5f ? 365f : 0f;
+        } else {
+            float x = (5f - temp) / amplitude;
+            if (x <= -1f) growingSeason = 365f;
+            else if (x >= 1f) growingSeason = 0f;
+            else growingSeason = 365f * (0.5f - (float) Math.asin(Math.clamp(x, -1f, 1f)) / (float) Math.PI);
+        }
+
+        float gsFactor = Math.clamp((growingSeason - 60f) / (150f - 60f), 0f, 1f);
+        float effTreeMoisture = treeMoisture * gsFactor;
+
+        float moistureFactor = Math.clamp((treeMoisture - 0.35f) / 0.45f, 0f, 1f);
+        float bareThreshold = 0.7f + (1.19f - 0.7f) * moistureFactor;
+
+        boolean treesNone = effTreeMoisture < 0.2f;
+        boolean tooArid = treeMoisture < 0.05f;
+        boolean tooCold = growingSeason < 60f;
+        boolean barren = tooArid || tooCold;
+        boolean treesSparse = !treesNone && effTreeMoisture < 0.5f;
+        boolean treesForest = !treesNone && effTreeMoisture >= 0.5f && effTreeMoisture < 0.8f;
+        boolean treesDense = !treesNone && effTreeMoisture >= 0.8f && effTreeMoisture < 1.3f;
+        boolean treesRainforest = !treesNone && effTreeMoisture >= 1.3f;
+
+        boolean slopeMedium = slope >= 0.62f && slope < bareThreshold;
+        boolean slopeBare = slope >= bareThreshold;
+
+        boolean isSteep = slope > 0.78f;
+        boolean hasSnow = temp < 0f && precip > 150f && !isSteep;
+
+        boolean isOcean = elev < 0f;
+        boolean isDeepOcean = elev < -100f;
+        boolean mountains = elev > 2500f;
+        boolean lowland = elev < 200f;
+        boolean frozen = temp < -5f;
+        boolean cold = temp >= -5f && temp < 5f;
+        boolean cool = temp >= 5f && temp < 12f;
+        boolean temperate = temp >= 12f && temp < 20f;
+        boolean warm = temp >= 20f && temp < 26f;
+        boolean hot = temp >= 26f;
+
+        text.append(Text.literal("=== Derived Values ===\n"));
+        text.append(Text.literal("treeMoisture: " + treeMoisture + "\n"));
+        text.append(Text.literal("effTreeMoisture: " + effTreeMoisture + "\n"));
+        text.append(Text.literal("growingSeason: " + growingSeason + "\n"));
+        text.append(Text.literal("bareThreshold: " + bareThreshold + "\n"));
+        text.append(Text.literal("\n=== Tree Coverage ===\n"));
+        text.append(Text.literal("treesNone: " + treesNone + "\n"));
+        text.append(Text.literal("tooArid: " + tooArid + "\n"));
+        text.append(Text.literal("tooCold: " + tooCold + "\n"));
+        text.append(Text.literal("barren: " + barren + "\n"));
+        text.append(Text.literal("treesSparse: " + treesSparse + "\n"));
+        text.append(Text.literal("treesForest: " + treesForest + "\n"));
+        text.append(Text.literal("treesDense: " + treesDense + "\n"));
+        text.append(Text.literal("treesRainforest: " + treesRainforest + "\n"));
+        text.append(Text.literal("\n=== Slope ===\n"));
+        text.append(Text.literal("slopeMedium: " + slopeMedium + "\n"));
+        text.append(Text.literal("slopeBare: " + slopeBare + "\n"));
+        text.append(Text.literal("\n=== Snow ===\n"));
+        text.append(Text.literal("isSteep: " + isSteep + "\n"));
+        text.append(Text.literal("hasSnow: " + hasSnow + "\n"));
+        text.append(Text.literal("\n=== Elevation/Temp ===\n"));
+        text.append(Text.literal("isOcean: " + isOcean + "\n"));
+        text.append(Text.literal("isDeepOcean: " + isDeepOcean + "\n"));
+        text.append(Text.literal("mountains: " + mountains + "\n"));
+        text.append(Text.literal("lowland: " + lowland + "\n"));
+        text.append(Text.literal("frozen: " + frozen + "\n"));
+        text.append(Text.literal("cold: " + cold + "\n"));
+        text.append(Text.literal("cool: " + cool + "\n"));
+        text.append(Text.literal("temperate: " + temperate + "\n"));
+        text.append(Text.literal("warm: " + warm + "\n"));
+        text.append(Text.literal("hot: " + hot + "\n"));
+        text.append(Text.literal("\n=== End Debug ==="));
+
+        return text;
     }
 }

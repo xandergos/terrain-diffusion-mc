@@ -1,9 +1,7 @@
 package com.github.xandergos.terraindiffusionmc;
 
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
-import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
-import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
-import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
+import com.github.xandergos.terraindiffusionmc.pipeline.*;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionDensityFunction;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
@@ -19,6 +17,7 @@ import net.minecraft.text.ClickEvent;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import java.net.URI;
+
 import net.minecraft.util.Identifier;
 import net.minecraft.world.World;
 import org.slf4j.Logger;
@@ -51,7 +50,9 @@ public class TerrainDiffusionMc implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> ExplorerServer.stop());
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
-                dispatcher.register(literal("td-explore").executes(TerrainDiffusionMc::executeExplore))
+                dispatcher.register(literal("td-explore").executes(TerrainDiffusionMc::executeExplore)
+                        .then(literal("debug").executes(TerrainDiffusionMc::executeDebug))
+                )
         );
     }
 
@@ -69,6 +70,40 @@ public class TerrainDiffusionMc implements ModInitializer {
             LOG.error("Failed to start terrain explorer", e);
             ctx.getSource().sendError(Text.literal("Failed to start terrain explorer: " + e.getMessage()));
         }
+        return 1;
+    }
+
+    private static int executeDebug(CommandContext<ServerCommandSource> ctx) {
+        try {
+            int x = (int) ctx.getSource().getPosition().getX();
+            int z = (int) ctx.getSource().getPosition().getZ();
+
+            LocalTerrainProvider.HeightmapData data = LocalTerrainProvider.getInstance().fetchHeightmap(z, x, z + 1, x + 1);
+
+            if (data == null || data.heightmap == null) {
+                ctx.getSource().sendFeedback(() ->
+                        Text.literal("Failed to fetch heightmap data"), false
+                );
+                return -1;
+            }
+
+            short elevShort = data.heightmap[0][0];
+
+            float temp = 15f;
+            float tSeason = 200f;
+            float precip = 500f;
+            float pCV = 50f;
+            float slope = 0.3f;
+
+            MutableText debugText = BiomeClassifier.getDebugText(
+                    elevShort, temp, tSeason, precip, pCV, slope
+            );
+
+            ctx.getSource().sendFeedback(() -> debugText, true);
+        } catch (Exception e) {
+            ctx.getSource().sendError(Text.literal("Debug failed: " + e.getMessage()));
+        }
+
         return 1;
     }
 }
