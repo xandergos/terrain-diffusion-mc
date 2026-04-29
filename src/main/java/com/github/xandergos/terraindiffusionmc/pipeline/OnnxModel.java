@@ -158,7 +158,7 @@ public final class OnnxModel implements AutoCloseable {
         if (!TerrainDiffusionConfig.offloadModels()) {
             OrtSession.SessionOptions sessionOptions = new OrtSession.SessionOptions();
             sessionOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
-            addGpuProvider(sessionOptions);
+            addGpuProvider(env, sessionOptions);
             this.gpuSession = env.createSession(modelBytes, sessionOptions);
             this.cpuSession = null;
             LOG.info("ONNX model '{}' loaded on GPU ({} KB) in {} ms",
@@ -279,7 +279,7 @@ public final class OnnxModel implements AutoCloseable {
         try {
             OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
             opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
-            addGpuProvider(opts);
+            addGpuProvider(env, opts);
             activeGpuSession = env.createSession(optimizedModelBytes, opts);
             gpuSlotHolder = this;
             LOG.debug("GPU session ready for '{}'", name);
@@ -288,7 +288,7 @@ public final class OnnxModel implements AutoCloseable {
         }
     }
 
-    private static void addGpuProvider(OrtSession.SessionOptions opts) throws OrtException {
+    private static void addGpuProvider(OrtEnvironment env, OrtSession.SessionOptions opts) throws OrtException {
         boolean gpuRequired = "gpu".equals(TerrainDiffusionConfig.inferenceDevice());
         boolean added = false;
 
@@ -327,7 +327,8 @@ public final class OnnxModel implements AutoCloseable {
             try {
                 var availableProviders = OrtEnvironment.getAvailableProviders();
                 if (availableProviders.contains(OrtProvider.MI_GRAPH_X)) {
-                    opts.addMIGraphX(0); // MIGraphX uses the ROCm provider interface
+                    // Note: This method is defined in the version of the ONNX Runtime Java API we compiled.
+                    opts.addMIGraphX();
                     added = true;
                     setResolvedProviderOnce("MIGraphX");
                 }
