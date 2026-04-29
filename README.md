@@ -4,13 +4,14 @@ This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.co
 
 ## Which version should I use?
 
-Three builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
+Four builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
 
 
 | Build                     | Supports                    | Setup required                          |
 | ------------------------- | --------------------------- | --------------------------------------- |
 | **Windows** (recommended) | Windows with any modern GPU | None                                    |
 | **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
+| **MIGraphX**              | Linux with modern AMD GPUs  | ROCm + MIGraphX                         |
 | **CPU (Slow)**            | Everything                  | None                                    |
 
 
@@ -19,7 +20,7 @@ Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer
 ## Requirements
 
 - Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
-- Windows with a GPU OR Linux with an NVIDIA GPU is strongly recommended. CPU inference works but is very slow.
+- Windows with a GPU, Linux with an NVIDIA GPU (CUDA), or Linux with a modern AMD GPU (MIGraphX) is strongly recommended. CPU inference works but is very slow.
 - VRAM (GPU RAM) needed: 1.5GB
 - RAM needed: 2.5GB (May need to increase Minecraft's RAM allocation)
 
@@ -45,7 +46,8 @@ Edit `config/terrain-diffusion-mc.properties` (created automatically on first la
 # Terrain Diffusion MC configuration
 
 # Inference device: "cpu", "gpu", or "auto" (try GPU first then fall back to CPU).
-# "gpu" uses DirectML on the -windows build, or CUDA on the -cuda build.
+# "gpu" uses DirectML on the -windows build, CUDA on the -cuda build,
+# or MIGraphX on the -migraphx build.
 # Defaults to "gpu" so startup fails loudly if GPU inference is expected but not detected.
 # Set to "cpu" if you do not have a supported GPU.
 inference.device=gpu
@@ -98,6 +100,7 @@ Terrain Diffusion's models take up about 2.5GB of RAM, so make sure to allocate 
 An internet connection is required during the build to fetch the pinned model manifest metadata from Hugging Face.
 
 The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source. 
+The `-migraphx` build requires `libs/onnxruntime-migraphx.jar`, which is built locally from ONNX Runtime + MIGraphX.
 
 Build for Windows (DirectML):
 ```
@@ -107,6 +110,11 @@ Build for Windows (DirectML):
 Build for CUDA:
 ```
 ./gradlew build -PuseCuda=true
+```
+
+Build for MIGraphX:
+```
+./gradlew build -PuseMigraphX=true
 ```
 
 Build for CPU:
@@ -142,6 +150,107 @@ cd onnxruntime
 ```
 
 The built jar appears in `java/build/`. Rename it to `onnxruntime-dml.jar` and place it in `libs/` in this repository.
+
+### Building onnxruntime with MIGraphX
+
+**Requirements**
+
+- Linux host with ROCm installed (example path: `/opt/rocm`)
+- MIGraphX libraries available through the ROCm install
+- Python 3.10+
+- CMake 3.28+
+- GCC/G++ 14 (or a toolchain compatible with your ONNX Runtime checkout)
+
+See the ONNX Runtime build docs and the MIGraphX EP docs for platform-specific details:
+
+- [ONNX Runtime build docs](https://onnxruntime.ai/docs/build/inferencing.html)
+- [MIGraphX EP docs](https://onnxruntime.ai/docs/execution-providers/MIGraphX-ExecutionProvider.html)
+
+**Steps**
+
+Run from the ONNX Runtime repo root:
+
+```bash
+python3 tools/ci_build/build.py \
+	--build_dir build/Linux \
+	--config Release \
+	--use_migraphx \
+	--migraphx_home /opt/rocm \
+	--build_java \
+	--parallel \
+	--skip_tests \
+	--compile_no_warning_as_error \
+	--cmake_extra_defines \
+		CMAKE_C_COMPILER=gcc-14 \
+		CMAKE_CXX_COMPILER=g++-14 \
+		CMAKE_HIP_COMPILER=/opt/rocm/llvm/bin/clang++ \
+		CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+		FETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER \
+		re2_FOUND=FALSE \
+		ABSL_PROPAGATE_CXX_STD=ON
+```
+
+The Java build produces:
+
+- `java/build/libs/onnxruntime-1.20.0.jar`
+- `build/Linux/Release/libonnxruntime_providers_shared.so`
+- `build/Linux/Release/libonnxruntime_providers_migraphx.so`
+
+Create the local jar by adding the provider libraries into the standard ONNX Runtime native path:
+
+```bash
+cp java/build/libs/onnxruntime-1.20.0.jar /path/to/terrain-diffusion-mc/libs/onnxruntime-migraphx.jar
+
+tmpdir=$(mktemp -d)
+mkdir -p "$tmpdir/ai/onnxruntime/native/linux-x64"
+cp build/Linux/Release/libonnxruntime_providers_shared.so "$tmpdir/ai/onnxruntime/native/linux-x64/"
+cp build/Linux/Release/libonnxruntime_providers_migraphx.so "$tmpdir/ai/onnxruntime/native/linux-x64/"
+
+(cd "$tmpdir" && jar uf /path/to/terrain-diffusion-mc/libs/onnxruntime-migraphx.jar \
+	ai/onnxruntime/native/linux-x64/libonnxruntime_providers_shared.so \
+	ai/onnxruntime/native/linux-x64/libonnxruntime_providers_migraphx.so)
+
+rm -rf "$tmpdir"
+```
+
+This final `onnxruntime-migraphx.jar` should contain:
+
+- `ai/onnxruntime/native/linux-x64/libonnxruntime.so`
+- `ai/onnxruntime/native/linux-x64/libonnxruntime4j_jni.so`
+- `ai/onnxruntime/native/linux-x64/libonnxruntime_providers_shared.so`
+- `ai/onnxruntime/native/linux-x64/libonnxruntime_providers_migraphx.so`
+
+Developer note for Java bindings
+
+- If your ONNX Runtime Java binding does not already expose a MIGraphX provider helper on the session (and the 1.20.* builds won't), add the following methods to the Java session class (this project uses `OrtSession` in java/src/main/java/ai/onnxruntime/OrtSession.java):
+
+```java
+public void addMIGraphX() throws OrtException {
+	addMIGraphX(0);
+}
+
+public void addMIGraphX(int deviceNum) throws OrtException {
+	checkClosed();
+	addMIGraphX(OnnxRuntime.ortApiHandle, nativeHandle, deviceNum);
+}
+
+private native void addMIGraphX(long apiHandle, long nativeHandle, int deviceNum)
+				throws OrtException;
+```
+
+- Also ensure the core loader exposes the MIGraphX provider constant and extraction helper in `OnnxRuntime` (java/src/main/java/ai/onnxruntime/OnnxRuntime.java):
+
+```java
+static final String ONNXRUNTIME_LIBRARY_MIGRAPHX_NAME = "onnxruntime_providers_migraphx";
+static boolean extractMIGraphX() {
+		return extractProviderLibrary(ONNXRUNTIME_LIBRARY_MIGRAPHX_NAME);
+}
+// call extractMIGraphX() from init() before loading the core native library (line ~165)
+```
+
+These changes allow the Java API to request registration of the MIGraphX execution provider at runtime (similar to CUDA/DirectML/TensorRT helpers).
+
+
 
 ## Note For Mod Developers
 
