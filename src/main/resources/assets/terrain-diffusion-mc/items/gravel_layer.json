@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "terrain-diffusion-mc:block/gravel_layer/layer1"
+  }
+}
