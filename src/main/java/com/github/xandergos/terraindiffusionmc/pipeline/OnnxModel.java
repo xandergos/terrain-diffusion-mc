@@ -32,6 +32,7 @@ public final class OnnxModel implements AutoCloseable {
     private static volatile String resolvedInferenceProvider = null;
     private static final AtomicBoolean providerLoggedOnce = new AtomicBoolean(false);
     private static final AtomicBoolean cudaWarnLoggedOnce = new AtomicBoolean(false);
+    private static final AtomicBoolean migraphxWarnLoggedOnce = new AtomicBoolean(false);
     private static final AtomicBoolean dmlWarnLoggedOnce = new AtomicBoolean(false);
     private static final AtomicBoolean noGpuWarnLoggedOnce = new AtomicBoolean(false);
 
@@ -321,10 +322,27 @@ public final class OnnxModel implements AutoCloseable {
                 }
             }
         }
+
+        if (!added) {
+            try {
+                var availableProviders = OrtEnvironment.getAvailableProviders();
+                if (availableProviders.contains(OrtProvider.MI_GRAPH_X)) {
+                    opts.addMIGraphX(0); // MIGraphX uses the ROCm provider interface
+                    added = true;
+                    setResolvedProviderOnce("MIGraphX");
+                }
+            } catch (Throwable t) {
+                if (migraphxWarnLoggedOnce.compareAndSet(false, true)) {
+                    LOG.warn("MIGraphX not available: {} - {}. This is expected if you are not using a MIGraphX build.",
+                            t.getClass().getSimpleName(), t.getMessage());
+                }
+            }
+        }
+
         if (gpuRequired && !added) {
             throw new OrtException(
-                    "inference.device=gpu but neither CUDA nor DirectML is available. " +
-                    "Use the GPU build or set inference.device=cpu.");
+                    "inference.device=gpu but no GPU provider (CUDA, DirectML, MIGraphX) is available. " +
+                    "Use the appropriate build for your platform or set inference.device=cpu.");
         }
         if (!added) {
             setResolvedProviderOnce("CPU");

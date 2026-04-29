@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.microsoft.onnxruntime</groupId>
+  <artifactId>onnxruntime</artifactId>
+  <version>1.20.0</version>
+  <name>onnx-runtime</name>
+  <description>ONNX Runtime is a performance-focused inference engine for ONNX (Open Neural Network Exchange) models.</description>
+  <url>https://microsoft.github.io/onnxruntime/</url>
+  <organization>
+    <name>Microsoft</name>
+    <url>https://www.microsoft.com</url>
+  </organization>
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://opensource.org/licenses/MIT</url>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <id>onnxruntime</id>
+      <name>ONNX Runtime</name>
+      <email>onnxruntime@microsoft.com</email>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:git://github.com:microsoft/onnxruntime.git</connection>
+    <developerConnection>scm:git:ssh://github.com/microsoft/onnxruntime.git</developerConnection>
+    <url>https://github.com/microsoft/onnxruntime</url>
+  </scm>
+</project>
