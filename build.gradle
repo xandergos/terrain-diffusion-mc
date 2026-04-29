@@ -96,14 +96,6 @@ processResources {
     from(generatedManifestFile) {
         into ''
     }
-    if (useMigraphX) {
-        from(rootProject.file('../onnxruntime/build/Linux/Release/libonnxruntime_providers_shared.so')) {
-            into 'ai/onnxruntime/native/linux-x64'
-        }
-        from(rootProject.file('../onnxruntime/build/Linux/Release/libonnxruntime_providers_migraphx.so')) {
-            into 'ai/onnxruntime/native/linux-x64'
-        }
-    }
 
     filesMatching("fabric.mod.json") {
         expand "version": project.version,
