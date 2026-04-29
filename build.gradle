@@ -135,6 +135,15 @@ java {
 }
 
 jar {
+    if (useMigraphX) {
+        from({ zipTree(rootProject.file('libs/onnxruntime-migraphx.jar')) }) {
+            exclude 'META-INF/MANIFEST.MF'
+            exclude 'META-INF/*.SF'
+            exclude 'META-INF/*.DSA'
+            exclude 'META-INF/*.RSA'
+        }
+    }
+
     from("LICENSE") {
         rename { "${it}_${project.archivesBaseName}" }
     }

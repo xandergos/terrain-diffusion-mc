@@ -328,7 +328,7 @@ public final class OnnxModel implements AutoCloseable {
                 var availableProviders = OrtEnvironment.getAvailableProviders();
                 if (availableProviders.contains(OrtProvider.MI_GRAPH_X)) {
                     // Note: This method is defined in the version of the ONNX Runtime Java API we compiled.
-                    opts.addMIGraphX();
+                    opts.addMIGraphX(0);
                     added = true;
                     setResolvedProviderOnce("MIGraphX");
                 }
