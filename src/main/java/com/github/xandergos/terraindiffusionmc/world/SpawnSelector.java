@@ -2,6 +2,7 @@ package com.github.xandergos.terraindiffusionmc.world;
 
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
+import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import net.minecraft.util.math.BlockPos;
@@ -52,7 +53,8 @@ public final class SpawnSelector {
             LOG.info("SpawnSelector: best coarse tile ({}, {}) elev={} — refining...", bestCi, bestCj, bestElev);
 
             // Convert coarse tile center to block coordinates.
-            final int COARSE_TILE_BLOCK = 256;
+            int scale = WorldScaleManager.getCurrentScale();
+            final int COARSE_TILE_BLOCK = 256 * scale; // TODO: Need to check what scale is.
             int centerBlockX = bestCj * COARSE_TILE_BLOCK + COARSE_TILE_BLOCK / 2;
             int centerBlockZ = bestCi * COARSE_TILE_BLOCK + COARSE_TILE_BLOCK / 2;
 
