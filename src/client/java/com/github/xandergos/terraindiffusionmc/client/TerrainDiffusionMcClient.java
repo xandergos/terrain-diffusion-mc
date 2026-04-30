@@ -1,8 +1,8 @@
 package com.github.xandergos.terraindiffusionmc.client;
 
 import com.github.xandergos.terraindiffusionmc.block.ModBlocks;
-import com.github.xandergos.terraindiffusionmc.client.basin.IrrigationBasinKeybindings;
-import com.github.xandergos.terraindiffusionmc.client.basin.IrrigationBasinRenderer;
+import com.github.xandergos.terraindiffusionmc.client.hydro.HydrologyKeybindings;
+import com.github.xandergos.terraindiffusionmc.client.hydro.HydrologyRenderer;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.ColorProviderRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
@@ -15,13 +15,11 @@ public class TerrainDiffusionMcClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        IrrigationBasinKeybindings.register();
-
-        /*
-        * Apply biome grass tint to the grass layer block. Gate on tintIndex == 0 so the
-        * dirt-colored side base, the snow slab, and any other untinted faces are not
-        * accidentally turned green.
-        * */
+        HydrologyKeybindings.register();
+        
+        // Apply biome grass tint to the grass layer block. Gate on tintIndex == 0 so the
+        // dirt-colored side base, the snow slab, and any other untinted faces are not
+        // accidentally turned green.
         ColorProviderRegistry.BLOCK.register(
                 (state, world, pos, tintIndex) -> {
                     if (tintIndex != 0) return -1;
@@ -33,7 +31,7 @@ public class TerrainDiffusionMcClient implements ClientModInitializer {
         );
 
         WorldRenderEvents.END_MAIN.register(context ->
-                IrrigationBasinRenderer.render(
+                HydrologyRenderer.render(
                         context.matrices(),
                         (VertexConsumerProvider.Immediate) context.consumers(),
                         MinecraftClient.getInstance().gameRenderer.getCamera()

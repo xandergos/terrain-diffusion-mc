@@ -29,6 +29,9 @@ import static com.github.xandergos.terraindiffusionmc.TerrainDiffusionMc.MOD_ID;
  *
  * <p>Call {@link #register()} from {@code onInitialize} to trigger static class loading
  * and populate the registry.
+ *
+ * @author https://github.com/ThatDamnWittyWhizHard
+ * @owner @ThatDamnWittyWhizHard
  */
 public final class ModBlocks {
 
