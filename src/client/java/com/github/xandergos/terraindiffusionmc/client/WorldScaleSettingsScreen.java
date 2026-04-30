@@ -125,7 +125,7 @@ public final class WorldScaleSettingsScreen extends Screen {
 
         createWorldScreen.getWorldCreator().applyModifier((registryManager, selectedDimensions) -> {
             DimensionOptionsRegistryHolder updatedDimensions =
-                    updateOverworldDimensionType(registryManager.getOrThrow(RegistryKeys.DIMENSION_TYPE),
+                    updateOverworldDimensionType(registryManager.get(RegistryKeys.DIMENSION_TYPE),
                             selectedDimensions, selectedScale);
             return updatedDimensions == null ? selectedDimensions : updatedDimensions;
         });
