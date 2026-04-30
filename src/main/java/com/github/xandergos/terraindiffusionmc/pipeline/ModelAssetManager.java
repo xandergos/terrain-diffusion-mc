@@ -3,7 +3,7 @@ package com.github.xandergos.terraindiffusionmc.pipeline;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,8 +41,7 @@ public final class ModelAssetManager {
     private static final Logger LOG = LoggerFactory.getLogger(ModelAssetManager.class);
     private static final String MANIFEST_RESOURCE_PATH = "/model-assets-manifest.json";
     private static final long PROGRESS_LOG_THRESHOLD_BYTES = 100L * 1024L * 1024L;
-    private static final Path MODEL_DIRECTORY = FabricLoader.getInstance()
-            .getGameDir()
+    private static final Path MODEL_DIRECTORY = FMLPaths.GAMEDIR.get()
             .resolve("terrain-diffusion-models");
     private static final AtomicBoolean READY = new AtomicBoolean(false);
     private static final Gson GSON = new Gson();

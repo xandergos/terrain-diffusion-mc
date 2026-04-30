@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+    modId="terrain_diffusion_mc"
+    version="${file.jarVersion}"
+    displayName="Terrain Diffusion"
+    description='''Terrain Diffusion in Minecraft'''
+
+[[dependencies.terrain_diffusion_mc]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.terrain_diffusion_mc]]
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21.1,1.22)"
+    ordering="NONE"
+    side="BOTH"
+
+[[mixins]]
+    config="terrain-diffusion-mc.mixins.json"

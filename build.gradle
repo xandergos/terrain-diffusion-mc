@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.13-SNAPSHOT'
+    id 'dev.architectury.loom'
     id 'maven-publish'
 }
 
@@ -32,12 +32,11 @@ base {
 }
 
 loom {
-    splitEnvironmentSourceSets()
+    neoForge {}
 
     mods {
         "terrain-diffusion-mc" {
             sourceSet sourceSets.main
-            sourceSet sourceSets.client
         }
     }
 
@@ -48,28 +47,21 @@ loom {
     }
 }
 
-fabricApi {
-    configureDataGeneration {
-        client = true
-    }
-}
-
 repositories {
     // Add repositories to retrieve artifacts from in here.
     // You should only use this when depending on other mods because
     // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html
     // for more information about repositories.
+    maven { url = 'https://maven.neoforged.net/releases' }
     flatDir { dirs 'libs'}
 }
 
 dependencies {
     // To change the versions see the gradle.properties file
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    mappings loom.officialMojangMappings()
+    neoForge "net.neoforged:neoforge:${project.neoforge_version}"
 
     if (useCuda) {
         implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
@@ -86,19 +78,12 @@ dependencies {
 processResources {
     dependsOn 'generateModelAssetManifest'
     inputs.property "version", project.version
-    inputs.property "minecraft_version", project.minecraft_version
-    inputs.property "loader_version", project.loader_version
     inputs.property "build_variant", buildVariant
     filteringCharset "UTF-8"
     from(generatedManifestFile) {
         into ''
     }
 
-    filesMatching("fabric.mod.json") {
-        expand "version": project.version,
-                "minecraft_version": project.minecraft_version,
-                "loader_version": project.loader_version
-    }
     filesMatching("build-variant.properties") {
         expand "build_variant": buildVariant
     }

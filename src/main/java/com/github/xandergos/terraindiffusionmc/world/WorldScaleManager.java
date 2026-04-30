@@ -1,6 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.world;
 
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.server.level.ServerLevel;
 
 /**
  * Runtime access for world-scoped terrain scale.
@@ -21,9 +21,9 @@ public final class WorldScaleManager {
      * <p>If the world has no explicit stored scale yet, this applies pending
      * world-creation selection when present, otherwise falls back to {@value #DEFAULT_SCALE}.
      */
-    public static void initializeForWorld(ServerWorld serverWorld) {
-        WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
-                .getOrCreate(WorldScaleSettingsState.TYPE, WorldScaleSettingsState.STORAGE_NAME);
+    public static void initializeForWorld(ServerLevel serverLevel) {
+        WorldScaleSettingsState worldScaleSettingsState = serverLevel.getDataStorage()
+                .computeIfAbsent(WorldScaleSettingsState.TYPE, WorldScaleSettingsState.STORAGE_NAME);
 
         if (!worldScaleSettingsState.hasExplicitScale()) {
             Integer pendingScale = WorldScaleSelectionState.consumePendingScale();
@@ -44,10 +44,10 @@ public final class WorldScaleManager {
     /**
      * Updates world scale for the currently loaded world and persists it immediately.
      */
-    public static void setCurrentScale(ServerWorld serverWorld, int configuredScale) {
+    public static void setCurrentScale(ServerLevel serverLevel, int configuredScale) {
         int clampedScale = clampScale(configuredScale);
-        WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
-                .getOrCreate(WorldScaleSettingsState.TYPE, WorldScaleSettingsState.STORAGE_NAME);
+        WorldScaleSettingsState worldScaleSettingsState = serverLevel.getDataStorage()
+                .computeIfAbsent(WorldScaleSettingsState.TYPE, WorldScaleSettingsState.STORAGE_NAME);
         worldScaleSettingsState.setScale(clampedScale);
         currentScale = clampedScale;
     }

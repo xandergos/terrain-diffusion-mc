@@ -1,6 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.config;
 
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -88,9 +88,9 @@ public final class TerrainDiffusionConfig {
 
     private static Path resolveConfigPath() {
         try {
-            return FabricLoader.getInstance().getConfigDir().resolve(FILE_NAME);
+            return FMLPaths.CONFIGDIR.get().resolve(FILE_NAME);
         } catch (RuntimeException e) {
-            System.err.println("Fabric Loader config directory unavailable: " + e.getMessage());
+            System.err.println("FML config directory unavailable: " + e.getMessage());
             return null;
         }
     }

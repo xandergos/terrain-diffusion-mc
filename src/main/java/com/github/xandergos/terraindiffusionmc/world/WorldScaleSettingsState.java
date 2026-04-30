@@ -1,16 +1,16 @@
 package com.github.xandergos.terraindiffusionmc.world;
 
-import net.minecraft.datafixer.DataFixTypes;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.registry.RegistryWrapper;
-import net.minecraft.world.PersistentState;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.level.saveddata.SavedData;
 
 /**
  * Persisted per-world settings for terrain diffusion.
  *
- * <p>This is stored in the world save via Minecraft's persistent state manager.
+ * <p>This is stored in the world save via Minecraft's saved data manager.
  */
-public final class WorldScaleSettingsState extends PersistentState {
+public final class WorldScaleSettingsState extends SavedData {
     public static final String STORAGE_NAME = "terrain_diffusion_world_settings";
 
     private static final String NBT_KEY_SCALE = "scale";
@@ -31,16 +31,16 @@ public final class WorldScaleSettingsState extends PersistentState {
         return new WorldScaleSettingsState(WorldScaleManager.DEFAULT_SCALE, false);
     }
 
-    private static WorldScaleSettingsState fromNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    private static WorldScaleSettingsState fromNbt(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         int storedScale = nbt.contains(NBT_KEY_SCALE) ? nbt.getInt(NBT_KEY_SCALE) : WorldScaleManager.DEFAULT_SCALE;
         boolean storedExplicit = nbt.getBoolean(NBT_KEY_EXPLICIT_SCALE);
         return new WorldScaleSettingsState(storedScale, storedExplicit);
     }
 
     /**
-     * Type descriptor used by the persistent state manager.
+     * Factory descriptor used by the saved data manager.
      */
-    public static final PersistentState.Type<WorldScaleSettingsState> TYPE = new PersistentState.Type<>(
+    public static final SavedData.Factory<WorldScaleSettingsState> TYPE = new SavedData.Factory<>(
             WorldScaleSettingsState::createDefault,
             WorldScaleSettingsState::fromNbt,
             DataFixTypes.LEVEL);
@@ -65,11 +65,11 @@ public final class WorldScaleSettingsState extends PersistentState {
     public void setScale(int configuredScale) {
         this.scale = WorldScaleManager.clampScale(configuredScale);
         this.explicitScale = true;
-        markDirty();
+        setDirty();
     }
 
     @Override
-    public NbtCompound writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup registryLookup) {
+    public CompoundTag save(CompoundTag nbt, HolderLookup.Provider registryLookup) {
         nbt.putInt(NBT_KEY_SCALE, scale);
         nbt.putBoolean(NBT_KEY_EXPLICIT_SCALE, explicitScale);
         return nbt;
