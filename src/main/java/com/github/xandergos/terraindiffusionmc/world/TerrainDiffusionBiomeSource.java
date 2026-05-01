@@ -22,6 +22,7 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeSource;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.Climate;
+import net.neoforged.fml.ModList;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -102,11 +103,108 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
             ).apply(instance, instance.stable(TerrainDiffusionBiomeSource::new)));
 
 
-    private HolderGetter<Biome> biomeLookup;
-    private volatile Map<Short, Holder<Biome>> biomeIdMap = null;
+    private final Map<Short, Holder<Biome>> biomeIdMap;
 
     public TerrainDiffusionBiomeSource(HolderGetter<Biome> biomeLookup) {
-        this.biomeLookup = biomeLookup;
+        // Resolve all biome holders eagerly in the constructor while biomeLookup is valid
+        // (registry isn't frozen during codec decode). Storing the lookup for lazy use blew up at
+        // server tick time when MappedRegistry's registration-lookup view tries to create a pending
+        // holder reference for missing BWG biomes — registry is frozen by then and validateWrite
+        // throws "Registry is already frozen".
+        Map<Short, Holder<Biome>> map = new HashMap<>();
+        // Vanilla biomes
+        map.put((short)  1, biomeLookup.getOrThrow(Biomes.PLAINS));
+        map.put((short)  3, biomeLookup.getOrThrow(Biomes.SNOWY_PLAINS));
+        map.put((short)  5, biomeLookup.getOrThrow(Biomes.DESERT));
+        map.put((short)  6, biomeLookup.getOrThrow(Biomes.SWAMP));
+        map.put((short)  8, biomeLookup.getOrThrow(Biomes.FOREST));
+        map.put((short) 15, biomeLookup.getOrThrow(Biomes.TAIGA));
+        map.put((short) 16, biomeLookup.getOrThrow(Biomes.SNOWY_TAIGA));
+        map.put((short) 17, biomeLookup.getOrThrow(Biomes.SAVANNA));
+        map.put((short) 19, biomeLookup.getOrThrow(Biomes.WINDSWEPT_HILLS));
+        map.put((short) 23, biomeLookup.getOrThrow(Biomes.JUNGLE));
+        map.put((short) 26, biomeLookup.getOrThrow(Biomes.BADLANDS));
+        map.put((short) 29, biomeLookup.getOrThrow(Biomes.MEADOW));
+        map.put((short) 31, biomeLookup.getOrThrow(Biomes.GROVE));
+        map.put((short) 32, biomeLookup.getOrThrow(Biomes.SNOWY_SLOPES));
+        map.put((short) 33, biomeLookup.getOrThrow(Biomes.FROZEN_PEAKS));
+        map.put((short) 35, biomeLookup.getOrThrow(Biomes.STONY_PEAKS));
+        map.put((short) 41, biomeLookup.getOrThrow(Biomes.WARM_OCEAN));
+        map.put((short) 44, biomeLookup.getOrThrow(Biomes.OCEAN));
+        map.put((short) 46, biomeLookup.getOrThrow(Biomes.COLD_OCEAN));
+        map.put((short) 48, biomeLookup.getOrThrow(Biomes.FROZEN_OCEAN));
+        map.put((short) 108, biomeLookup.getOrThrow(FOREST_SPARSE));
+        map.put((short) 115, biomeLookup.getOrThrow(TAIGA_SPARSE));
+        map.put((short) 116, biomeLookup.getOrThrow(SNOWY_TAIGA_SPARSE));
+        // BWG biomes – fall back to nearest vanilla equivalent if mod is not loaded
+        map.put((short) 200, bwgOrFallback(biomeLookup, BWG_ALLIUM_SHRUBLAND,          Biomes.PLAINS));
+        map.put((short) 201, bwgOrFallback(biomeLookup, BWG_AMARANTH_GRASSLAND,        Biomes.DESERT));
+        map.put((short) 202, bwgOrFallback(biomeLookup, BWG_ARAUCARIA_SAVANNA,         Biomes.SAVANNA));
+        map.put((short) 203, bwgOrFallback(biomeLookup, BWG_ASPEN_BOREAL,              Biomes.TAIGA));
+        map.put((short) 204, bwgOrFallback(biomeLookup, BWG_ATACAMA_OUTBACK,           Biomes.DESERT));
+        map.put((short) 205, bwgOrFallback(biomeLookup, BWG_BAOBAB_SAVANNA,            Biomes.SAVANNA));
+        map.put((short) 206, bwgOrFallback(biomeLookup, BWG_BASALT_BARRERA,            Biomes.WINDSWEPT_HILLS));
+        map.put((short) 207, bwgOrFallback(biomeLookup, BWG_BAYOU,                     Biomes.SWAMP));
+        map.put((short) 208, bwgOrFallback(biomeLookup, BWG_BLACK_FOREST,              Biomes.FOREST));
+        map.put((short) 209, bwgOrFallback(biomeLookup, BWG_CANADIAN_SHIELD,           Biomes.GROVE));
+        map.put((short) 210, bwgOrFallback(biomeLookup, BWG_CIKA_WOODS,                Biomes.FOREST));
+        map.put((short) 211, bwgOrFallback(biomeLookup, BWG_COCONINO_MEADOW,           Biomes.PLAINS));
+        map.put((short) 212, bwgOrFallback(biomeLookup, BWG_CONIFEROUS_FOREST,         Biomes.TAIGA));
+        map.put((short) 213, bwgOrFallback(biomeLookup, BWG_CRAG_GARDENS,              Biomes.JUNGLE));
+        map.put((short) 214, bwgOrFallback(biomeLookup, BWG_CRIMSON_TUNDRA,            Biomes.SNOWY_PLAINS));
+        map.put((short) 215, bwgOrFallback(biomeLookup, BWG_CYPRESS_SWAMPLANDS,        Biomes.SWAMP));
+        map.put((short) 216, bwgOrFallback(biomeLookup, BWG_CYPRESS_WETLANDS,          Biomes.SWAMP));
+        map.put((short) 217, bwgOrFallback(biomeLookup, BWG_DACITE_RIDGES,             Biomes.STONY_PEAKS));
+        map.put((short) 218, bwgOrFallback(biomeLookup, BWG_DACITE_SHORE,              Biomes.WARM_OCEAN));
+        map.put((short) 219, bwgOrFallback(biomeLookup, BWG_DEAD_SEA,                  Biomes.WARM_OCEAN));
+        map.put((short) 220, bwgOrFallback(biomeLookup, BWG_EBONY_WOODS,               Biomes.FOREST));
+        map.put((short) 221, bwgOrFallback(biomeLookup, BWG_ENCHANTED_TANGLE,          Biomes.JUNGLE));
+        map.put((short) 222, bwgOrFallback(biomeLookup, BWG_ERODED_BOREALIS,           Biomes.GROVE));
+        map.put((short) 223, bwgOrFallback(biomeLookup, BWG_FIRECRACKER_CHAPARRAL,     Biomes.SAVANNA));
+        map.put((short) 224, bwgOrFallback(biomeLookup, BWG_FORGOTTEN_FOREST,          Biomes.FOREST));
+        map.put((short) 225, bwgOrFallback(biomeLookup, BWG_FRAGMENT_JUNGLE,           Biomes.JUNGLE));
+        map.put((short) 226, bwgOrFallback(biomeLookup, BWG_FROSTED_CONIFEROUS_FOREST, Biomes.SNOWY_TAIGA));
+        map.put((short) 227, bwgOrFallback(biomeLookup, BWG_FROSTED_TAIGA,             Biomes.SNOWY_TAIGA));
+        map.put((short) 228, bwgOrFallback(biomeLookup, BWG_HOWLING_PEAKS,             Biomes.STONY_PEAKS));
+        map.put((short) 229, bwgOrFallback(biomeLookup, BWG_IRONWOOD_GOUR,             Biomes.SAVANNA));
+        map.put((short) 230, bwgOrFallback(biomeLookup, BWG_JACARANDA_JUNGLE,          Biomes.JUNGLE));
+        map.put((short) 231, bwgOrFallback(biomeLookup, BWG_LUSH_STACKS,               Biomes.FOREST));
+        map.put((short) 232, bwgOrFallback(biomeLookup, BWG_MAPLE_TAIGA,               Biomes.TAIGA));
+        map.put((short) 233, bwgOrFallback(biomeLookup, BWG_MOJAVE_DESERT,             Biomes.DESERT));
+        map.put((short) 234, bwgOrFallback(biomeLookup, BWG_ORCHARD,                   Biomes.FOREST));
+        map.put((short) 235, bwgOrFallback(biomeLookup, BWG_OVERGROWTH_WOODLANDS,      Biomes.FOREST));
+        map.put((short) 236, bwgOrFallback(biomeLookup, BWG_PALE_BOG,                  Biomes.SWAMP));
+        map.put((short) 237, bwgOrFallback(biomeLookup, BWG_PRAIRIE,                   Biomes.DESERT));
+        map.put((short) 238, bwgOrFallback(biomeLookup, BWG_PUMPKIN_VALLEY,            Biomes.PLAINS));
+        map.put((short) 239, bwgOrFallback(biomeLookup, BWG_RAINBOW_BEACH,             Biomes.WARM_OCEAN));
+        map.put((short) 240, bwgOrFallback(biomeLookup, BWG_RED_ROCK_VALLEY,           Biomes.DESERT));
+        map.put((short) 241, bwgOrFallback(biomeLookup, BWG_RED_ROCK_PEAKS,            Biomes.STONY_PEAKS));
+        map.put((short) 242, bwgOrFallback(biomeLookup, BWG_REDWOOD_THICKET,           Biomes.TAIGA));
+        map.put((short) 243, bwgOrFallback(biomeLookup, BWG_ROSE_FIELDS,               Biomes.PLAINS));
+        map.put((short) 244, bwgOrFallback(biomeLookup, BWG_RUGGED_BADLANDS,           Biomes.BADLANDS));
+        map.put((short) 245, bwgOrFallback(biomeLookup, BWG_SAKURA_GROVE,              Biomes.FOREST));
+        map.put((short) 246, bwgOrFallback(biomeLookup, BWG_SHATTERED_GLACIER,         Biomes.FROZEN_PEAKS));
+        map.put((short) 247, bwgOrFallback(biomeLookup, BWG_SIERRA_BADLANDS,           Biomes.BADLANDS));
+        map.put((short) 248, bwgOrFallback(biomeLookup, BWG_SKYRIS_VALE,               Biomes.PLAINS));
+        map.put((short) 249, bwgOrFallback(biomeLookup, BWG_TROPICAL_RAINFOREST,       Biomes.JUNGLE));
+        map.put((short) 250, bwgOrFallback(biomeLookup, BWG_TEMPERATE_GROVE,           Biomes.FOREST));
+        map.put((short) 251, bwgOrFallback(biomeLookup, BWG_WEEPING_WITCH_FOREST,      Biomes.FOREST));
+        map.put((short) 252, bwgOrFallback(biomeLookup, BWG_WHITE_MANGROVE_MARSHES,    Biomes.SWAMP));
+        map.put((short) 253, bwgOrFallback(biomeLookup, BWG_WINDSWEPT_DESERT,          Biomes.DESERT));
+        map.put((short) 254, bwgOrFallback(biomeLookup, BWG_ZELKOVA_FOREST,            Biomes.FOREST));
+        this.biomeIdMap = Map.copyOf(map);
+    }
+
+    private static Holder<Biome> bwgOrFallback(HolderGetter<Biome> lookup, ResourceKey<Biome> bwgKey, ResourceKey<Biome> fallback) {
+        // Skip the lookup entirely if BWG isn't installed: the HolderGetter we receive during
+        // codec decoding is a registration lookup, and calling get(key) on it interns a pending
+        // Holder reference for the key. Those pending refs cause the biome registry's freeze
+        // validation to fail with "Unbound values" when BWG biomes never get registered.
+        if (!ModList.get().isLoaded("biomeswevegone")) {
+            return lookup.getOrThrow(fallback);
+        }
+        var opt = lookup.get(bwgKey);
+        return opt.isPresent() ? opt.get() : lookup.getOrThrow(fallback);
     }
 
     @Override
@@ -114,109 +212,13 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         return CODEC;
     }
 
-    private Holder<Biome> bwgOrFallback(ResourceKey<Biome> bwgKey, ResourceKey<Biome> fallback) {
-        var opt = this.biomeLookup.get(bwgKey);
-        return opt.isPresent() ? opt.get() : this.biomeLookup.getOrThrow(fallback);
-    }
-
-    private void requireBiomeIdMap() {
-        if (biomeIdMap != null) return;
-        synchronized (this) {
-            if (biomeIdMap != null) return;
-            Map<Short, Holder<Biome>> map = new HashMap<>();
-            // Vanilla biomes
-            map.put((short)  1, this.biomeLookup.getOrThrow(Biomes.PLAINS));
-            map.put((short)  3, this.biomeLookup.getOrThrow(Biomes.SNOWY_PLAINS));
-            map.put((short)  5, this.biomeLookup.getOrThrow(Biomes.DESERT));
-            map.put((short)  6, this.biomeLookup.getOrThrow(Biomes.SWAMP));
-            map.put((short)  8, this.biomeLookup.getOrThrow(Biomes.FOREST));
-            map.put((short) 15, this.biomeLookup.getOrThrow(Biomes.TAIGA));
-            map.put((short) 16, this.biomeLookup.getOrThrow(Biomes.SNOWY_TAIGA));
-            map.put((short) 17, this.biomeLookup.getOrThrow(Biomes.SAVANNA));
-            map.put((short) 19, this.biomeLookup.getOrThrow(Biomes.WINDSWEPT_HILLS));
-            map.put((short) 23, this.biomeLookup.getOrThrow(Biomes.JUNGLE));
-            map.put((short) 26, this.biomeLookup.getOrThrow(Biomes.BADLANDS));
-            map.put((short) 29, this.biomeLookup.getOrThrow(Biomes.MEADOW));
-            map.put((short) 31, this.biomeLookup.getOrThrow(Biomes.GROVE));
-            map.put((short) 32, this.biomeLookup.getOrThrow(Biomes.SNOWY_SLOPES));
-            map.put((short) 33, this.biomeLookup.getOrThrow(Biomes.FROZEN_PEAKS));
-            map.put((short) 35, this.biomeLookup.getOrThrow(Biomes.STONY_PEAKS));
-            map.put((short) 41, this.biomeLookup.getOrThrow(Biomes.WARM_OCEAN));
-            map.put((short) 44, this.biomeLookup.getOrThrow(Biomes.OCEAN));
-            map.put((short) 46, this.biomeLookup.getOrThrow(Biomes.COLD_OCEAN));
-            map.put((short) 48, this.biomeLookup.getOrThrow(Biomes.FROZEN_OCEAN));
-            map.put((short) 108, this.biomeLookup.getOrThrow(FOREST_SPARSE));
-            map.put((short) 115, this.biomeLookup.getOrThrow(TAIGA_SPARSE));
-            map.put((short) 116, this.biomeLookup.getOrThrow(SNOWY_TAIGA_SPARSE));
-            // BWG biomes – fall back to nearest vanilla equivalent if mod is not loaded
-            map.put((short) 200, bwgOrFallback(BWG_ALLIUM_SHRUBLAND,          Biomes.PLAINS));
-            map.put((short) 201, bwgOrFallback(BWG_AMARANTH_GRASSLAND,        Biomes.DESERT));
-            map.put((short) 202, bwgOrFallback(BWG_ARAUCARIA_SAVANNA,         Biomes.SAVANNA));
-            map.put((short) 203, bwgOrFallback(BWG_ASPEN_BOREAL,              Biomes.TAIGA));
-            map.put((short) 204, bwgOrFallback(BWG_ATACAMA_OUTBACK,           Biomes.DESERT));
-            map.put((short) 205, bwgOrFallback(BWG_BAOBAB_SAVANNA,            Biomes.SAVANNA));
-            map.put((short) 206, bwgOrFallback(BWG_BASALT_BARRERA,            Biomes.WINDSWEPT_HILLS));
-            map.put((short) 207, bwgOrFallback(BWG_BAYOU,                     Biomes.SWAMP));
-            map.put((short) 208, bwgOrFallback(BWG_BLACK_FOREST,              Biomes.FOREST));
-            map.put((short) 209, bwgOrFallback(BWG_CANADIAN_SHIELD,           Biomes.GROVE));
-            map.put((short) 210, bwgOrFallback(BWG_CIKA_WOODS,                Biomes.FOREST));
-            map.put((short) 211, bwgOrFallback(BWG_COCONINO_MEADOW,           Biomes.PLAINS));
-            map.put((short) 212, bwgOrFallback(BWG_CONIFEROUS_FOREST,         Biomes.TAIGA));
-            map.put((short) 213, bwgOrFallback(BWG_CRAG_GARDENS,              Biomes.JUNGLE));
-            map.put((short) 214, bwgOrFallback(BWG_CRIMSON_TUNDRA,            Biomes.SNOWY_PLAINS));
-            map.put((short) 215, bwgOrFallback(BWG_CYPRESS_SWAMPLANDS,        Biomes.SWAMP));
-            map.put((short) 216, bwgOrFallback(BWG_CYPRESS_WETLANDS,          Biomes.SWAMP));
-            map.put((short) 217, bwgOrFallback(BWG_DACITE_RIDGES,             Biomes.STONY_PEAKS));
-            map.put((short) 218, bwgOrFallback(BWG_DACITE_SHORE,              Biomes.WARM_OCEAN));
-            map.put((short) 219, bwgOrFallback(BWG_DEAD_SEA,                  Biomes.WARM_OCEAN));
-            map.put((short) 220, bwgOrFallback(BWG_EBONY_WOODS,               Biomes.FOREST));
-            map.put((short) 221, bwgOrFallback(BWG_ENCHANTED_TANGLE,          Biomes.JUNGLE));
-            map.put((short) 222, bwgOrFallback(BWG_ERODED_BOREALIS,           Biomes.GROVE));
-            map.put((short) 223, bwgOrFallback(BWG_FIRECRACKER_CHAPARRAL,     Biomes.SAVANNA));
-            map.put((short) 224, bwgOrFallback(BWG_FORGOTTEN_FOREST,          Biomes.FOREST));
-            map.put((short) 225, bwgOrFallback(BWG_FRAGMENT_JUNGLE,           Biomes.JUNGLE));
-            map.put((short) 226, bwgOrFallback(BWG_FROSTED_CONIFEROUS_FOREST, Biomes.SNOWY_TAIGA));
-            map.put((short) 227, bwgOrFallback(BWG_FROSTED_TAIGA,             Biomes.SNOWY_TAIGA));
-            map.put((short) 228, bwgOrFallback(BWG_HOWLING_PEAKS,             Biomes.STONY_PEAKS));
-            map.put((short) 229, bwgOrFallback(BWG_IRONWOOD_GOUR,             Biomes.SAVANNA));
-            map.put((short) 230, bwgOrFallback(BWG_JACARANDA_JUNGLE,          Biomes.JUNGLE));
-            map.put((short) 231, bwgOrFallback(BWG_LUSH_STACKS,               Biomes.FOREST));
-            map.put((short) 232, bwgOrFallback(BWG_MAPLE_TAIGA,               Biomes.TAIGA));
-            map.put((short) 233, bwgOrFallback(BWG_MOJAVE_DESERT,             Biomes.DESERT));
-            map.put((short) 234, bwgOrFallback(BWG_ORCHARD,                   Biomes.FOREST));
-            map.put((short) 235, bwgOrFallback(BWG_OVERGROWTH_WOODLANDS,      Biomes.FOREST));
-            map.put((short) 236, bwgOrFallback(BWG_PALE_BOG,                  Biomes.SWAMP));
-            map.put((short) 237, bwgOrFallback(BWG_PRAIRIE,                   Biomes.DESERT));
-            map.put((short) 238, bwgOrFallback(BWG_PUMPKIN_VALLEY,            Biomes.PLAINS));
-            map.put((short) 239, bwgOrFallback(BWG_RAINBOW_BEACH,             Biomes.WARM_OCEAN));
-            map.put((short) 240, bwgOrFallback(BWG_RED_ROCK_VALLEY,           Biomes.DESERT));
-            map.put((short) 241, bwgOrFallback(BWG_RED_ROCK_PEAKS,            Biomes.STONY_PEAKS));
-            map.put((short) 242, bwgOrFallback(BWG_REDWOOD_THICKET,           Biomes.TAIGA));
-            map.put((short) 243, bwgOrFallback(BWG_ROSE_FIELDS,               Biomes.PLAINS));
-            map.put((short) 244, bwgOrFallback(BWG_RUGGED_BADLANDS,           Biomes.BADLANDS));
-            map.put((short) 245, bwgOrFallback(BWG_SAKURA_GROVE,              Biomes.FOREST));
-            map.put((short) 246, bwgOrFallback(BWG_SHATTERED_GLACIER,         Biomes.FROZEN_PEAKS));
-            map.put((short) 247, bwgOrFallback(BWG_SIERRA_BADLANDS,           Biomes.BADLANDS));
-            map.put((short) 248, bwgOrFallback(BWG_SKYRIS_VALE,               Biomes.PLAINS));
-            map.put((short) 249, bwgOrFallback(BWG_TROPICAL_RAINFOREST,       Biomes.JUNGLE));
-            map.put((short) 250, bwgOrFallback(BWG_TEMPERATE_GROVE,           Biomes.FOREST));
-            map.put((short) 251, bwgOrFallback(BWG_WEEPING_WITCH_FOREST,      Biomes.FOREST));
-            map.put((short) 252, bwgOrFallback(BWG_WHITE_MANGROVE_MARSHES,    Biomes.SWAMP));
-            map.put((short) 253, bwgOrFallback(BWG_WINDSWEPT_DESERT,          Biomes.DESERT));
-            map.put((short) 254, bwgOrFallback(BWG_ZELKOVA_FOREST,            Biomes.FOREST));
-            biomeIdMap = map;
-        }
-    }
-
     @Override
     protected Stream<Holder<Biome>> collectPossibleBiomes() {
-        requireBiomeIdMap();
         return biomeIdMap.values().stream();
     }
 
     @Override
     public Holder<Biome> getNoiseBiome(int x, int y, int z, Climate.Sampler noise) {
-        requireBiomeIdMap();
         Holder<Biome> defaultEntry = biomeIdMap.get((short) 1);
 
         // x, y, z are in quart coordinates (block / 4)

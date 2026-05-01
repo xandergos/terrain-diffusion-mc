@@ -30,7 +30,7 @@
     "erosion": 0,
     "depth": 0,
     "ridges": 0,
-    "preliminary_surface_level": {
+    "initial_density_without_jaggedness": {
       "type": "terrain-diffusion-mc:terrain_diffusion"
     },
     "final_density": {
