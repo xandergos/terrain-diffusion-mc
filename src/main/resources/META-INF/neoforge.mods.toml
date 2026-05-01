@@ -4,7 +4,7 @@ license="MIT"
 
 [[mods]]
     modId="terrain_diffusion_mc"
-    version="${file.jarVersion}"
+    version="${mod_version}"
     displayName="Terrain Diffusion"
     description='''Terrain Diffusion in Minecraft'''
 

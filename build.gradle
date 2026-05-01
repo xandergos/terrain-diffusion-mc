@@ -90,6 +90,7 @@ dependencies {
 processResources {
     dependsOn 'generateModelAssetManifest'
     inputs.property "version", project.version
+    inputs.property "mod_version", project.mod_version
     inputs.property "build_variant", buildVariant
     filteringCharset "UTF-8"
     from(generatedManifestFile) {
@@ -98,6 +99,10 @@ processResources {
 
     filesMatching("build-variant.properties") {
         expand "build_variant": buildVariant
+    }
+
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand "mod_version": project.mod_version
     }
 }
 
