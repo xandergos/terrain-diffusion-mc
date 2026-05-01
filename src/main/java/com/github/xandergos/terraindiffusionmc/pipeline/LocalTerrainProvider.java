@@ -9,12 +9,14 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.Comparator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Provides terrain heightmap and biome data from the local WorldPipeline.
@@ -56,10 +58,14 @@ public final class LocalTerrainProvider {
         }
     }
 
+    private static record CacheKey(int i1, int j1, int i2, int j2) {}
+    private static record CacheEntry(HeightmapData data, AtomicLong lastAccessed) {}
+
     private static final int MAX_CACHE_SIZE = 64;
-    private static final Object CACHE_LOCK = new Object();
-    private static final Map<String, HeightmapData> CACHE = new LinkedHashMap<>(16, 0.75f, true);
-    private static final Map<String, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_SIZE_HEADROOM = 8;
+    private static final Map<CacheKey, CacheEntry> CACHE = new ConcurrentHashMap<>();
+    private static final AtomicLong CACHE_CLOCK = new AtomicLong();
+    private static final Map<CacheKey, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
     /** Single thread for pipeline.get() so MemoryTileStore is not accessed concurrently. */
     private static final ExecutorService INFERENCE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "terrain-diffusion-inference");
@@ -71,6 +77,8 @@ public final class LocalTerrainProvider {
     private static long instanceSeed;
 
     private final WorldPipeline pipeline;
+
+    private static final Object INIT_LOCK = new Object();
 
     private LocalTerrainProvider(long seed, PipelineModels models) {
         this.pipeline = new WorldPipeline(seed, models);
@@ -87,26 +95,28 @@ public final class LocalTerrainProvider {
         } else if (instanceSeed != seed) {
             INSTANCE.pipeline.setSeed(seed);
             instanceSeed = seed;
-            synchronized (CACHE_LOCK) { CACHE.clear(); }
+            CACHE.clear();
             PENDING.clear();
         }
     }
 
-    public static synchronized LocalTerrainProvider getInstance() {
-        if (INSTANCE == null) {
+    public static LocalTerrainProvider getInstance() {
+        if (INSTANCE != null) return INSTANCE;
+
+        synchronized(INIT_LOCK) {
+            if (INSTANCE != null) return INSTANCE;
             PipelineModels.awaitLoad();
             PipelineModels models = PipelineModels.getInstance();
             if (models == null) throw new IllegalStateException("PipelineModels failed to load");
             INSTANCE = new LocalTerrainProvider(0L, models);
             instanceSeed = 0L;
         }
+
         return INSTANCE;
     }
 
     public static void clearCache() {
-        synchronized (CACHE_LOCK) {
-            CACHE.clear();
-        }
+        CACHE.clear();
         PENDING.clear();
     }
 
@@ -147,7 +157,7 @@ public final class LocalTerrainProvider {
             LocalTerrainProvider provider = getInstance();
             provider.pipeline.setSeed(newSeed);
             instanceSeed = newSeed;
-            synchronized (CACHE_LOCK) { CACHE.clear(); }
+            CACHE.clear();
             PENDING.clear();
             return null;
         });
@@ -171,12 +181,17 @@ public final class LocalTerrainProvider {
      * If the caller is the server or a chunk worker, the game will stall until this returns.
      */
     public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
-        String key = i1 + "," + j1 + "," + i2 + "," + j2;
-        synchronized (CACHE_LOCK) {
-            HeightmapData cached = CACHE.get(key);
-            if (cached != null) return cached;
+        CacheKey key = new CacheKey(i1, j1, i2, j2);
+        CacheEntry cached = CACHE.get(key);
+        if (cached != null) {
+            cached.lastAccessed.set(CACHE_CLOCK.incrementAndGet());
+            return cached.data;
         }
 
+        return this.genHeightmap(key, i1, j1, i2, j2);
+    }
+
+    private HeightmapData genHeightmap(CacheKey key, int i1, int j1, int i2, int j2) {
         int scale = WorldScaleManager.getCurrentScale();
         FutureTask<HeightmapData> task = new FutureTask<>(() -> {
             long computedWindowCountBefore = pipeline.getTotalComputedWindowCount();
@@ -191,10 +206,8 @@ public final class LocalTerrainProvider {
             LOG.info(
                     "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
                     OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
-            synchronized (CACHE_LOCK) {
-                CACHE.put(key, data);
-                evictLruTo(MAX_CACHE_SIZE);
-            }
+            CACHE.put(key, new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet())));
+            evictLruTo(MAX_CACHE_SIZE);
             PENDING.remove(key);
             return data;
         });
@@ -217,10 +230,13 @@ public final class LocalTerrainProvider {
     }
 
     private static void evictLruTo(int maxSize) {
-        Iterator<Map.Entry<String, HeightmapData>> it = CACHE.entrySet().iterator();
-        while (CACHE.size() > maxSize && it.hasNext()) {
-            it.next();
-            it.remove();
+        int headroomHalf = MAX_CACHE_SIZE_HEADROOM / 2;
+        if (CACHE.size() > maxSize + headroomHalf) {
+            CACHE.entrySet().stream()
+                .sorted(Comparator.comparingLong(e -> e.getValue().lastAccessed.get()))
+                .limit(MAX_CACHE_SIZE_HEADROOM)
+                .map(Map.Entry::getKey)
+                .forEach(CACHE::remove);
         }
     }
 
