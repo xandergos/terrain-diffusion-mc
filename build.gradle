@@ -31,6 +31,15 @@ base {
     archivesName = project.archives_base_name
 }
 
+// Client UI sources are merged into the main source set; @OnlyIn handles client-only types
+// at runtime, and the mixin config marks the WorldTab mixin as client-only.
+sourceSets {
+    main {
+        java.srcDirs += ['src/client/java']
+        resources.srcDirs += ['src/client/resources']
+    }
+}
+
 loom {
     neoForge {}
 

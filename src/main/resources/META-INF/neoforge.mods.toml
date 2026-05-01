@@ -24,3 +24,6 @@ license="MIT"
 
 [[mixins]]
     config="terrain-diffusion-mc.mixins.json"
+
+[[mixins]]
+    config="terrain-diffusion-mc.client.mixins.json"
