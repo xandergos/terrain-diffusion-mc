@@ -75,7 +75,7 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
-    modImplementation "maven.modrinth:lithostitched:1.7.2-fabric-21.11"
+    modImplementation "maven.modrinth:lithostitched:${project.lithostitched_version}"
 
     if (useCuda) {
         implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
