@@ -27,7 +27,7 @@ public class MinecraftServerMixin {
 
         // Calculate your target coordinates
         // This method must block until the terrain model returns the desired X/Z.
-        ChunkPos targetChunk = SpawnSelector.calculateCoarseSpawnChunk(world);
+        ChunkPos targetChunk = SpawnSelector.calculateCoarseSpawnChunk();
 
         int targetX = targetChunk.getCenterX();
         int targetZ = targetChunk.getCenterZ();
