@@ -5,9 +5,8 @@ import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.HeightmapData;
 import com.mojang.datafixers.util.Pair;
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.MapCodec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
 
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.registry.RegistryEntryLookup;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
@@ -34,11 +33,10 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     private static final RegistryKey<Biome> TAIGA_SPARSE = RegistryKey.of(RegistryKeys.BIOME, Identifier.of("terrain-diffusion-mc", "taiga_sparse"));
     private static final RegistryKey<Biome> SNOWY_TAIGA_SPARSE = RegistryKey.of(RegistryKeys.BIOME, Identifier.of("terrain-diffusion-mc", "snowy_taiga_sparse"));
 
-    public static final MapCodec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.mapCodec((instance) ->
-            instance.group(
-                    RegistryOps.getEntryLookupCodec(RegistryKeys.BIOME)
-            ).apply(instance, instance.stable(TerrainDiffusionBiomeSource::new)));
-
+    public static final Codec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.create(instance ->
+                    instance.group(
+                            RegistryOps.getEntryLookupCodec(RegistryKeys.BIOME)
+                    ).apply(instance, instance.stable(TerrainDiffusionBiomeSource::new)));
 
     private RegistryEntryLookup<Biome> biomeLookup;
     private Map<Short, RegistryEntry<Biome>> biomeIdMap = null;
@@ -48,7 +46,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     }
 
     @Override
-    protected MapCodec<? extends BiomeSource> getCodec() {
+    protected Codec<? extends BiomeSource> getCodec() {
         return CODEC;
     }
 

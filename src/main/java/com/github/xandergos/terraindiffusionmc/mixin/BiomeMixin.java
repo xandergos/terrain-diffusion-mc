@@ -18,7 +18,7 @@ public abstract class BiomeMixin {
     public abstract boolean hasPrecipitation();
 
     @Inject(method = "getPrecipitation", at = @At("HEAD"), cancellable = true)
-    private void preventHighAltitudeSnow(BlockPos pos, int seaLevel, CallbackInfoReturnable<Biome.Precipitation> cir) {
+    private void preventHighAltitudeSnow(BlockPos pos, CallbackInfoReturnable<Biome.Precipitation> cir) {
         if (!this.hasPrecipitation()) {
             cir.setReturnValue(Biome.Precipitation.NONE);
             return;

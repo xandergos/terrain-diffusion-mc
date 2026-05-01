@@ -22,8 +22,7 @@ public final class WorldScaleManager {
      * world-creation selection when present, otherwise falls back to {@value #DEFAULT_SCALE}.
      */
     public static void initializeForWorld(ServerWorld serverWorld) {
-        WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
-                .getOrCreate(WorldScaleSettingsState.TYPE);
+        WorldScaleSettingsState worldScaleSettingsState = WorldScaleSettingsState.get(serverWorld);
 
         if (!worldScaleSettingsState.hasExplicitScale()) {
             Integer pendingScale = WorldScaleSelectionState.consumePendingScale();
@@ -46,8 +45,9 @@ public final class WorldScaleManager {
      */
     public static void setCurrentScale(ServerWorld serverWorld, int configuredScale) {
         int clampedScale = clampScale(configuredScale);
-        WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
-                .getOrCreate(WorldScaleSettingsState.TYPE);
+
+        WorldScaleSettingsState worldScaleSettingsState = WorldScaleSettingsState.get(serverWorld);
+
         worldScaleSettingsState.setScale(clampedScale);
         currentScale = clampedScale;
     }
