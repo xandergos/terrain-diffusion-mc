@@ -2,8 +2,6 @@ package com.github.xandergos.terraindiffusionmc;
 
 import com.github.xandergos.terraindiffusionmc.block.ModBlocks;
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
-import com.github.xandergos.terraindiffusionmc.hydro.HydrologyBuilder;
-import com.github.xandergos.terraindiffusionmc.hydro.HydrologyTilePrewarmer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
 import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
@@ -41,14 +39,6 @@ public class TerrainDiffusionMc implements ModInitializer {
 
         ModelAssetManager.ensureAssetsReady();
         PipelineModels.load();
-
-        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
-            LocalTerrainProvider.clearCache();
-            HydrologyBuilder.clearCache();
-        });
-
-        // populate world with debug rivers
-        HydrologyTilePrewarmer.register();
 
         ServerWorldEvents.LOAD.register((server, world) -> {
             if (world.getRegistryKey() == World.OVERWORLD) {

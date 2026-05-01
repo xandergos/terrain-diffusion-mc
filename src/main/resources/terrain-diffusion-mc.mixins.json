@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "BiomeMixin",
-    "NoiseChunkGeneratorMixin"
+    "RiverWaterPlacementMixin"
   ],
   "injectors": {
     "defaultRequire": 1

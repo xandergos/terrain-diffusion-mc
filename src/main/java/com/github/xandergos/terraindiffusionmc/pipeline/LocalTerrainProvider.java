@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.hydro.RiverGridCache;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
@@ -118,6 +119,7 @@ public final class LocalTerrainProvider {
     public static void clearCache() {
         CACHE.clear();
         PENDING.clear();
+        RiverGridCache.clear();
     }
 
     // =========================================================================
@@ -159,6 +161,7 @@ public final class LocalTerrainProvider {
             instanceSeed = newSeed;
             CACHE.clear();
             PENDING.clear();
+            RiverGridCache.clear();
             return null;
         });
     }
@@ -233,10 +236,10 @@ public final class LocalTerrainProvider {
         int headroomHalf = MAX_CACHE_SIZE_HEADROOM / 2;
         if (CACHE.size() > maxSize + headroomHalf) {
             CACHE.entrySet().stream()
-                .sorted(Comparator.comparingLong(e -> e.getValue().lastAccessed.get()))
-                .limit(MAX_CACHE_SIZE_HEADROOM)
-                .map(Map.Entry::getKey)
-                .forEach(CACHE::remove);
+                    .sorted(Comparator.comparingLong(e -> e.getValue().lastAccessed.get()))
+                    .limit(MAX_CACHE_SIZE_HEADROOM)
+                    .map(Map.Entry::getKey)
+                    .forEach(CACHE::remove);
         }
     }
 
@@ -307,7 +310,7 @@ public final class LocalTerrainProvider {
     // =========================================================================
 
     private float[] addElevationNoise(float[] elevSmooth, float[] elevPadded,
-                                       int i1, int j1, int H, int W, float pixelSizeM) {
+                                      int i1, int j1, int H, int W, float pixelSizeM) {
         float[] slopeGradient = sobelGradient(elevPadded, H + 2, W + 2, H, W);
         float[] elevOut = elevSmooth.clone();
         float normFactor = 40f * pixelSizeM / NATIVE_RESOLUTION;
@@ -353,8 +356,8 @@ public final class LocalTerrainProvider {
     }
 
     private static float[] upsampleClimate(float[] climNative, int nH, int nW,
-                                            int cropI1, int cropJ1, int H, int W,
-                                            int scale, int upH, int upW) {
+                                           int cropI1, int cropJ1, int H, int W,
+                                           int scale, int upH, int upW) {
         if (climNative == null) return null;
         float[] result = new float[4 * H * W];
         for (int ch = 0; ch < 4; ch++) {
