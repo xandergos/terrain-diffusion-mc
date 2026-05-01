@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Provides terrain heightmap and biome data from the local WorldPipeline.
@@ -57,12 +59,45 @@ public final class LocalTerrainProvider {
     private static final int MAX_CACHE_SIZE = 256;
     private static final ConcurrentHashMap<Long, HeightmapData> CACHE = new ConcurrentHashMap<>(256);
     private static final ConcurrentHashMap<Long, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
-    /** Single thread for pipeline.get() so MemoryTileStore is not accessed concurrently. */
-    private static final ExecutorService INFERENCE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "terrain-diffusion-inference");
-        t.setDaemon(true);
-        return t;
-    });
+    /**
+     * Pool that runs pipeline tile inference. Sized via {@link #resolveInferenceThreadCount()}:
+     * <ul>
+     *   <li>CPU mode: 1 (ONNX Runtime already does intra-op parallelism on CPU; concurrent
+     *       sessions oversubscribe cores).</li>
+     *   <li>GPU + offload_models=true: 1 (concurrent threads would thrash the GPU slot lock,
+     *       swapping models on every runModel call — strictly worse than serial).</li>
+     *   <li>GPU + offload_models=false: respects {@code inference.threads} config (default 2).</li>
+     * </ul>
+     * <p>The win at pool>1 is mostly prefetch overlap: tile fetches no longer queue
+     * sequentially behind the demanded tile, so the next tile is ready when a player
+     * crosses a boundary. Raw inference throughput on a single GPU is bounded by SM
+     * occupancy and is rarely 2× faster with two concurrent calls.
+     */
+    private static final ExecutorService INFERENCE_EXECUTOR = createInferenceExecutor();
+
+    private static ExecutorService createInferenceExecutor() {
+        int threadCount = resolveInferenceThreadCount();
+        AtomicInteger threadId = new AtomicInteger(0);
+        LOG.info("Terrain diffusion inference pool size: {}", threadCount);
+        return Executors.newFixedThreadPool(threadCount, r -> {
+            Thread t = new Thread(r, "terrain-diffusion-inference-" + threadId.getAndIncrement());
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * Resolves the inference pool size, auto-clamping to 1 in modes where concurrency
+     * would hurt rather than help. See {@link #INFERENCE_EXECUTOR} for rationale.
+     */
+    private static int resolveInferenceThreadCount() {
+        int requested = TerrainDiffusionConfig.inferenceThreads();
+        if (requested <= 1) return 1;
+        String device = TerrainDiffusionConfig.inferenceDevice();
+        if ("cpu".equals(device)) return 1;
+        if (TerrainDiffusionConfig.offloadModels()) return 1;
+        return requested;
+    }
 
     private static volatile LocalTerrainProvider INSTANCE;
     private static long instanceSeed;

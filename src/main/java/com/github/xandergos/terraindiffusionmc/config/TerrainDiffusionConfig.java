@@ -18,6 +18,7 @@ public final class TerrainDiffusionConfig {
     private static final boolean DEFAULT_VALIDATE_MODEL = true;
     private static final int DEFAULT_EXPLORER_PORT = 19801;
     private static final int DEFAULT_TILE_SIZE = 256;
+    private static final int DEFAULT_INFERENCE_THREADS = 2;
 
     static {
         loadDefaults();
@@ -51,6 +52,17 @@ public final class TerrainDiffusionConfig {
     /** Whether to validate SHA-256 for pre-existing local model files before use. */
     public static boolean validateModel() {
         return readBoolean("validate_model", DEFAULT_VALIDATE_MODEL);
+    }
+
+    /**
+     * Maximum concurrent inference workers. Auto-clamped to 1 in CPU mode and in GPU
+     * offload mode (where the GPU slot lock would serialize anyway and concurrent
+     * threads thrash model swaps). Useful only with {@code inference.device=gpu} and
+     * {@code inference.offload_models=false}.
+     */
+    public static int inferenceThreads() {
+        int configured = readInt("inference.threads", DEFAULT_INFERENCE_THREADS);
+        return Math.max(1, configured);
     }
 
     /** Region side length in blocks. Must be a positive power of 2 (128, 256, 512, ...). */

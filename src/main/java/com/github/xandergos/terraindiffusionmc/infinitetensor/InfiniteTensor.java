@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -15,6 +17,10 @@ import java.util.stream.Collectors;
  * are summed to produce the final slice.
  *
  * <p>Create instances exclusively through {@link MemoryTileStore#getOrCreate}.
+ *
+ * <p>Thread safety: concurrent {@code getSlice} calls deduplicate per-window compute
+ * via an in-progress map of {@link CompletableFuture}; the second arrival joins the
+ * first arrival's future rather than recomputing.
  */
 public class InfiniteTensor {
 
@@ -49,6 +55,9 @@ public class InfiniteTensor {
      * Eviction occurs after a new window is written.
      */
     final long cacheLimitBytes;
+
+    /** Per-window in-progress futures so concurrent compute requests dedup. */
+    private final ConcurrentHashMap<List<Integer>, CompletableFuture<Void>> inProgress = new ConcurrentHashMap<>();
 
     InfiniteTensor(
             String id,
@@ -120,7 +129,6 @@ public class InfiniteTensor {
             output.addFrom(cached, dstRegion, srcRegion);
         });
 
-        store.evictIfNeeded(id, cacheLimitBytes);
         return output;
     }
 
@@ -137,6 +145,11 @@ public class InfiniteTensor {
      * Matches Python _apply_f_range: each range is expanded to window indices, then
      * deduped (no bounding-box union, so we only request windows that actually intersect
      * at least one range).
+     *
+     * <p>Concurrent callers are deduplicated per-window: each pending window is claimed
+     * by exactly one thread (which computes it); other threads wait on the claimer's
+     * future. Strictly DAG dep graph means no cycles; rigorous try/finally ensures that
+     * a compute exception fails the future rather than stranding waiters.
      */
     void ensureComputedRanges(List<int[][]> pixelRanges) {
         Set<List<Integer>> pendingSet = new LinkedHashSet<>();
@@ -151,26 +164,69 @@ public class InfiniteTensor {
                 }
             });
         }
-        List<int[]> pending = pendingSet.stream()
-                .map(k -> k.stream().mapToInt(Integer::intValue).toArray())
-                .collect(Collectors.toList());
-        if (pending.isEmpty()) return;
+        if (pendingSet.isEmpty()) return;
 
-        // Dependencies get the exact list of pixel ranges (one per our pending window), not a union.
-        for (int i = 0; i < deps.length; i++) {
-            List<int[][]> depRanges = new ArrayList<>(pending.size());
-            for (int[] wi : pending) {
-                depRanges.add(depWindows[i].getBounds(wi));
+        // Claim per-window ownership via the in-progress map. Each window goes to exactly
+        // one thread; others wait on the claimer's future.
+        List<int[]> myWindows = new ArrayList<>();
+        List<CompletableFuture<Void>> myFutures = new ArrayList<>();
+        List<CompletableFuture<Void>> waitOnOthers = new ArrayList<>();
+        for (List<Integer> key : pendingSet) {
+            // Re-check the cache: another thread may have just finished computing.
+            int[] wi = key.stream().mapToInt(Integer::intValue).toArray();
+            if (store.isWindowCached(id, wi)) continue;
+
+            CompletableFuture<Void> mine = new CompletableFuture<>();
+            CompletableFuture<Void> existing = inProgress.putIfAbsent(key, mine);
+            if (existing == null) {
+                myWindows.add(wi);
+                myFutures.add(mine);
+            } else {
+                waitOnOthers.add(existing);
             }
-            deps[i].ensureComputedRanges(depRanges);
         }
 
-        if (batchSize > 0 && batchFunction != null) {
-            computeBatched(pending);
-        } else {
-            for (int[] windowIndex : pending) {
-                computeSingle(windowIndex);
+        try {
+            if (!myWindows.isEmpty()) {
+                // Recurse into deps for the windows we own.
+                for (int i = 0; i < deps.length; i++) {
+                    List<int[][]> depRanges = new ArrayList<>(myWindows.size());
+                    for (int[] wi : myWindows) {
+                        depRanges.add(depWindows[i].getBounds(wi));
+                    }
+                    deps[i].ensureComputedRanges(depRanges);
+                }
+
+                if (batchSize > 0 && batchFunction != null) {
+                    computeBatched(myWindows);
+                } else {
+                    for (int[] windowIndex : myWindows) {
+                        computeSingle(windowIndex);
+                    }
+                }
             }
+
+            // Mark all my windows complete.
+            for (int i = 0; i < myWindows.size(); i++) {
+                List<Integer> key = toKey(myWindows.get(i));
+                inProgress.remove(key);
+                myFutures.get(i).complete(null);
+            }
+        } catch (Throwable t) {
+            // Fail my futures so waiters don't hang. Strip from inProgress so future
+            // callers can retry.
+            for (int i = 0; i < myWindows.size(); i++) {
+                List<Integer> key = toKey(myWindows.get(i));
+                inProgress.remove(key);
+                myFutures.get(i).completeExceptionally(t);
+            }
+            throw t;
+        }
+
+        // Wait for windows another thread is computing. join() rethrows their exception
+        // wrapped in CompletionException; let it propagate.
+        for (CompletableFuture<Void> f : waitOnOthers) {
+            f.join();
         }
     }
 
@@ -188,7 +244,7 @@ public class InfiniteTensor {
         }
         FloatTensor result = function.apply(windowIndex, args);
         validateOutputShape(result, windowIndex);
-        store.cacheWindow(id, windowIndex, result);
+        store.cacheWindow(id, windowIndex, result, cacheLimitBytes);
     }
 
     private void computeBatched(List<int[]> windowIndices) {
@@ -219,7 +275,7 @@ public class InfiniteTensor {
                 FloatTensor result = outputs.get(k);
                 int[] windowIndex = batch.get(k);
                 validateOutputShape(result, windowIndex);
-                store.cacheWindow(id, windowIndex, result);
+                store.cacheWindow(id, windowIndex, result, cacheLimitBytes);
             }
 
             from = to;
@@ -278,6 +334,12 @@ public class InfiniteTensor {
                 if (d == 0) break outer;
             }
         }
+    }
+
+    private static List<Integer> toKey(int[] windowIndex) {
+        List<Integer> key = new ArrayList<>(windowIndex.length);
+        for (int v : windowIndex) key.add(v);
+        return key;
     }
 
     @FunctionalInterface
