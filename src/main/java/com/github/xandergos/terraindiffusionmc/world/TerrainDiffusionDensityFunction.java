@@ -46,9 +46,63 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
         return targetHeight - y;
     }
 
+    private static final class FillContext {
+        int blockStartX, blockStartZ, blockEndX, blockEndZ;
+        HeightmapData data;
+
+        void update(int x, int z) {
+            if (x < blockStartX || x >= blockEndX) this.init(x, z);
+            if (z < blockStartZ || z >= blockEndZ) this.init(x, z);
+        }
+
+        void init(int x, int z) {
+            int tileSize = TerrainDiffusionConfig.tileSize();
+            int tileShift = Integer.numberOfTrailingZeros(tileSize);
+
+            int tileX = x >> tileShift;
+            int tileZ = z >> tileShift;
+
+            this.blockStartX = tileX << tileShift;
+            this.blockStartZ = tileZ << tileShift;
+            this.blockEndX = blockStartX + tileSize;
+            this.blockEndZ = blockStartZ + tileSize;
+
+            this.data = LocalTerrainProvider.getInstance()
+                .fetchHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX);
+        }
+    }
+
     @Override
     public void fill(double[] densities, DensityFunction.EachApplier applier) {
-        applier.fill(densities, this);
+        if (densities.length == 0) return;
+
+        FillContext ctx = new FillContext();
+        DensityFunction.NoisePos pos = applier.at(0);
+        int x = pos.blockX();
+        int z = pos.blockZ();
+        int y = pos.blockY();
+        ctx.init(x, z);
+
+        for (int i = 0; i < densities.length; i++) {
+            pos = applier.at(i);
+            x = pos.blockX();
+            z = pos.blockZ();
+            y = pos.blockY();
+            ctx.update(x, z);
+
+            HeightmapData data = ctx.data;
+            if (data == null || data.heightmap == null) {
+                densities[i] = -y;
+                continue;
+            }
+
+            int localX = Math.max(0, Math.min(data.width  - 1, x - ctx.blockStartX));
+            int localZ = Math.max(0, Math.min(data.height - 1, z - ctx.blockStartZ));
+
+            int targetHeight = HeightConverter
+                .convertToMinecraftHeight(data.heightmap[localZ][localX]);
+            densities[i] = targetHeight - y;
+        }
     }
 
     @Override
