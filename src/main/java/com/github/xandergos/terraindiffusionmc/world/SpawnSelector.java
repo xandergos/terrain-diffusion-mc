@@ -2,10 +2,14 @@ package com.github.xandergos.terraindiffusionmc.world;
 
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
+
+import net.minecraft.server.network.SpawnLocating;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.Heightmap;
-import net.minecraft.server.world.ServerWorld;
+import net.minecraft.world.WorldProperties.SpawnPoint;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,71 +23,52 @@ public final class SpawnSelector {
 
     private static final Logger LOG = LoggerFactory.getLogger(SpawnSelector.class);
 
-    // Coarse sampling grid configuration (in coarse-tile coordinates)
-    private static final int GRID_SIZE = 10;    // number of samples along one axis
-    private static final int SPACING = 0;       // coarse tiles between samples
+    private static final int COARSE_GRID_SIZE = 10;     // number of samples along one axis
+    private static final int COARSE_GRID_SPACING = 0;   // coarse tiles between samples
+    private static final int TILE_GRID_SIZE = 4;        // number of chunk samples along on axis
 
-    private SpawnSelector() {
-        // Utility class; no instances
+    public static SpawnPoint findSpawnPoint(ServerWorld world) {
+        TileSample coarseTile = calculateCoarseSpawnChunk();
+
+        // If no valid spawn found, default to origin.
+        if (!coarseTile.hasSample()) {
+            LOG.warn("SpawnSelector: no valid coarse spawn found; defaulting to origin");
+            return SpawnPoint.create(world.getRegistryKey(), BlockPos.ORIGIN, 0.0F, 0.0F);
+        }
+
+        // Refine the coarse tile to find a safe spawn position.
+        BlockPos safeSpawnPos = findSafeSpawn(world, coarseTile);
+
+        return SpawnPoint.create(world.getRegistryKey(), safeSpawnPos, 0.0F, 0.0F);
     }
 
-    public static ChunkPos calculateCoarseSpawnChunk() {
+    private static TileSample calculateCoarseSpawnChunk() {
+        final int half = COARSE_GRID_SIZE / 2;
+        TileSample tile = new TileSample();
 
         try {
             LOG.info("SpawnSelector: starting coarse sampling for Overworld");
-
-            final int half = GRID_SIZE / 2;
-            BlockSample block = new BlockSample();
-
+            
             // Expand in square "rings" around (0, 0) in grid coordinates.
             // r is the ring radius in grid coordinates.
             for (int r = 0; r <= half; r++) {
                 for (int x = -r; x <= r; x++) {
-                    if (samplePoint(x, -r, block) || (r != 0 && samplePoint(x, r, block))) {
-                        return coarseToChunk(block);
-                    }
+                    if (sampleTile(x, -r, tile)) { return tile; }
+                    if (r != 0 && sampleTile(x, r, tile)) { return tile; }
                 }
                 if (r > 0) {
                     for (int z = -r + 1; z <= r - 1; z++) {
-                        if (samplePoint(-r, z, block) || samplePoint(r, z, block)) {
-                            return coarseToChunk(block);
-                        }
+                        if (sampleTile(-r, z, tile)) { return tile; }
+                        if (sampleTile(r, z, tile)) { return tile; }
                     }
                 }
             }
-
-            if (!block.hasSample()) {
-                LOG.warn("SpawnSelector: no valid coarse samples found; falling back to origin");
-                return new ChunkPos(new BlockPos(0, 0, 0));
-            }
-
-            LOG.info("SpawnSelector: best coarse tile ({}, {}) elev={} — refining...",
-                     block.ci, block.cj, block.elev);
-
-            // Convert coarse tile center to block coordinates.
-            // NOTE: ci/cj are in coarse-tile coordinates; mapping to X/Z depends on scale.
-            int scale = WorldScaleManager.getCurrentScale();
-            final int coarseTileBlockSize = 256 * scale;
-
-            int centerBlockX = block.ci * coarseTileBlockSize + coarseTileBlockSize / 2;
-            int centerBlockZ = block.cj * coarseTileBlockSize + coarseTileBlockSize / 2;
-
-            return new ChunkPos(new BlockPos(centerBlockX, 0, centerBlockZ));
         } catch (Exception e) {
             LOG.error("SpawnSelector: unexpected error", e);
-            return new ChunkPos(new BlockPos(0, 0, 0));
         }
-    }
 
-    /**
-     * Convert block coordinates to chunk coordinates
-     *
-     * @param block Coarse block sample object
-     * @return Corner chunk position of course block
-     */
-    private static ChunkPos coarseToChunk(BlockSample block) {
-        int scale = WorldScaleManager.getCurrentScale();
-        return new ChunkPos(block.cj * 256 * scale >> 4, block.ci * 256 * scale >> 4);
+        // No valid spawn found; return an invalid sample.
+        return tile;
     }
 
     /**
@@ -93,9 +78,9 @@ public final class SpawnSelector {
      * @param gridZ grid coordinate in sample space (centred around 0)
      * @param best  mutable accumulator for the best sample found so far
      */
-    private static boolean samplePoint(int gridX, int gridZ, BlockSample block) {
-        int ci = gridX * SPACING;
-        int cj = gridZ * SPACING;
+    private static boolean sampleTile(int gridX, int gridZ, TileSample tile) {
+        int ci = gridX * (COARSE_GRID_SPACING + 1);
+        int cj = gridZ * (COARSE_GRID_SPACING + 1);
 
         try {
             FloatTensor slice = LocalTerrainProvider.getPipelineCoarse(ci, cj, ci + 1, cj + 1);
@@ -111,29 +96,72 @@ public final class SpawnSelector {
             // Elevation scoring: sign(raw) * raw^2
             float elev = Math.copySign(raw * raw, raw);
 
+            LOG.info("SpawnSelector: coarse sample at ({}, {}) has raw={} elev={} (w={})", ci, cj, raw, elev, w);
+
             // Pick first option above sea level
             if (elev > 0) {
-                block.elev = elev;
-                block.ci = ci;
-                block.cj = cj;
+                LOG.info("SpawnSelector: coarse sample found ({}, {}) elev={} (w={})", ci, cj, elev, w);
+                tile.elev = elev;
+                tile.ci = ci;
+                tile.cj = cj;
+                return true;
             }
-            return true;
         } catch (Exception e) {
             LOG.warn("SpawnSelector: coarse sample failed for ({}, {})", ci, cj, e);
-            return false;
         }
+
+        return false;
     }
 
     /**
      * Mutable object for blocks
      */
-    private static final class BlockSample {
+    private static final class TileSample {
         float elev = Float.POSITIVE_INFINITY;
-        int ci;
-        int cj;
+        int ci = 0;
+        int cj = 0;
 
         boolean hasSample() {
             return elev != Float.POSITIVE_INFINITY;
         }
+    }
+
+    /**
+     * Refine a coarse tile sample by checking multiple nearby chunks for a safe spawn point.
+     *
+     * @param world the server world to check for spawn safety
+     * @param tile  the coarse tile sample to refine
+     * @return a safe spawn position within the tile, or a fallback position if none found
+     */
+    private static BlockPos findSafeSpawn(ServerWorld world, TileSample tile) {
+        // Convert coarse tile center to block coordinates.
+        int scale = WorldScaleManager.getCurrentScale();
+        int coarseTileBlockSize = 256 * scale;
+        int chunkToTileScale = coarseTileBlockSize / 16; // number of chunks per coarse tile along on axis
+
+        // Clamp the number of chunks to maximum possible to avoid resampling
+        int numbChunks = Math.min(TILE_GRID_SIZE, chunkToTileScale);
+
+        // Corner of the coarse tile in block coordinates
+        int tileX = tile.cj * coarseTileBlockSize;
+        int tileZ = tile.ci * coarseTileBlockSize;
+
+        LOG.info("SpawnSelector: refining spawn around coarse tile at block ({}, {}) with scale {} ({} chunks per tile)", tileX, tileZ, scale, chunkToTileScale);
+
+        for (int ti = 0; ti < numbChunks; ti++) {
+            for (int tj = 0; tj < numbChunks; tj++) {
+                // Calculate the block coordinates of the chunk to check
+                int blockX = tileX + tj * chunkToTileScale * (16 / numbChunks);
+                int blockZ = tileZ + ti * chunkToTileScale * (16 / numbChunks);
+                LOG.info("SpawnSelector: checking chunk at ({}, {}) for safe spawn", blockX, blockZ);
+                BlockPos pos = SpawnLocating.findServerSpawnPoint(world, new ChunkPos(blockX / 16, blockZ / 16));
+                if (pos != null) {
+                    LOG.info("SpawnSelector: refined spawn found at chunk ({}, {}) -> block ({}, {}, {})", blockX, blockZ, pos.getX(), pos.getY(), pos.getZ());
+                    return pos;
+                }
+            }
+        }
+
+        return new BlockPos(tileX, world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, tileX, tileZ), tileZ);
     }
 }
