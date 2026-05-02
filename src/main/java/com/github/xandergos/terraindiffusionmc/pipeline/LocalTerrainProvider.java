@@ -122,10 +122,6 @@ public final class LocalTerrainProvider {
         RiverGridCache.clear();
     }
 
-    // =========================================================================
-    // Explorer API — all pipeline calls routed through INFERENCE_EXECUTOR
-    // =========================================================================
-
     /** Returns the current world seed used by the pipeline. */
     public static long getSeed() {
         return instanceSeed;
@@ -179,7 +175,7 @@ public final class LocalTerrainProvider {
 
     /**
      * Fetch heightmap for a block-coordinate region (i=Z, j=X).
-     * Coordinates are in block space; scale from config determines blocks per native pixel.
+     * Coordinates are in block space ; scale from config determines blocks per native pixel.
      * Blocks the calling thread until the tile is ready (one tile can take 10–30+ seconds).
      * If the caller is the server or a chunk worker, the game will stall until this returns.
      */
@@ -243,10 +239,6 @@ public final class LocalTerrainProvider {
         }
     }
 
-    // =========================================================================
-    // Scale == 1: block coords == native pixel coords
-    // =========================================================================
-
     private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
         int H = i2 - i1, W = j2 - j1;
 
@@ -258,10 +250,6 @@ public final class LocalTerrainProvider {
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
         return buildHeightmapData(elevFlat, biomeFlat, H, W);
     }
-
-    // =========================================================================
-    // Scale > 1: pipeline at native res → bilinear upsample to block res
-    // =========================================================================
 
     private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale) {
         int H = i2 - i1, W = j2 - j1;
@@ -304,10 +292,6 @@ public final class LocalTerrainProvider {
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
         return buildHeightmapData(elevOut, biomeFlat, H, W);
     }
-
-    // =========================================================================
-    // Helpers
-    // =========================================================================
 
     private float[] addElevationNoise(float[] elevSmooth, float[] elevPadded,
                                       int i1, int j1, int H, int W, float pixelSizeM) {

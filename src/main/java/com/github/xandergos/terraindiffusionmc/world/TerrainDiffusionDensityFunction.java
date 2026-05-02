@@ -61,23 +61,21 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
     }
 
     /**
-     * Per-fill() invocation context. Caches:
+     * Per-fill() invocation context. Caches :
      * - the heightmap tile (unchanged from before)
      * - the river depression map for the current chunk (16×16 int[])
      *
-     * fill() is called once per Y-column slice inside a chunk; X and Z stay
-     * constant within a single call, so the chunk key rarely changes.
+     * fill() is called once per Y-column slice inside a chunk ; X and Z stay
+     * constant within a single call , so the chunk key rarely changes.
      */
     private static final class FillContext {
-        // --- Tile cache ---
+        // Tile cache
         int blockStartX, blockStartZ, blockEndX, blockEndZ;
         HeightmapData data;
 
-        // --- River depression cache (one 16×16 chunk) ---
+        // River depression cache (one 16×16 chunk)
         int chunkX = Integer.MIN_VALUE, chunkZ = Integer.MIN_VALUE;
         int[] riverDepression; // [lz * 16 + lx], null if not yet loaded
-
-        // -----------------------------------------------------------------
 
         void update(int x, int z) {
             if (x < blockStartX || x >= blockEndX || z < blockStartZ || z >= blockEndZ)

@@ -24,17 +24,9 @@ import java.util.List;
  */
 public final class RiverNetwork {
 
-    // -------------------------------------------------------------------------
-    // Classification thresholds  (SPARSE network)
-    // -------------------------------------------------------------------------
-
     private static final float STREAM_THRESHOLD      = 6.2f;  // log1p(~500 cells)
     private static final float RIVER_THRESHOLD       = 7.6f;  // log1p(~2000 cells)
     private static final float MAJOR_RIVER_THRESHOLD = 8.5f;  // log1p(~5000 cells)
-
-    // -------------------------------------------------------------------------
-    // River classes
-    // -------------------------------------------------------------------------
 
     public enum RiverClass {
         //                 halfWidthBase  hwScale  baseDepth  waterFill
@@ -64,10 +56,6 @@ public final class RiverNetwork {
         return RiverClass.STREAM;
     }
 
-    // -------------------------------------------------------------------------
-    // Edge model
-    // -------------------------------------------------------------------------
-
     public static final class RiverEdge {
         public final int   fromX, fromZ;
         public final int   toX,   toZ;
@@ -92,10 +80,6 @@ public final class RiverNetwork {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Extraction
-    // -------------------------------------------------------------------------
-
     public static List<RiverEdge> extract(FlowGrid grid) {
         List<RiverEdge> edges = new ArrayList<>();
         int W = grid.width, H = grid.height;
@@ -114,10 +98,6 @@ public final class RiverNetwork {
         }
         return edges;
     }
-
-    // -------------------------------------------------------------------------
-    // Depression + water maps
-    // -------------------------------------------------------------------------
 
     /**
      * Result of building the influence maps for a chunk.
@@ -160,7 +140,7 @@ public final class RiverNetwork {
             int bz0 = Math.max(0,        (int)Math.floor(Math.min(az,bz) - pad - originZ));
             int bz1 = Math.min(height-1, (int)Math.ceil (Math.max(az,bz) + pad - originZ));
 
-            // Water level: the bottom (depth) + waterFill blocks are water
+            // Water level : the bottom (depth) + waterFill blocks are water
             int waterFill = edge.cls.waterFill;
 
             for (int bz2 = bz0; bz2 <= bz1; bz2++) {
@@ -173,7 +153,7 @@ public final class RiverNetwork {
                     if (dist >= halfWidth) continue;
 
                     float t = dist / halfWidth;           // 0=centre, 1=edge
-                    // Smooth cosine profile: flatter bottom, steeper banks
+                    // Smooth cosine profile : flatter bottom, steeper banks
                     float profile = (float)(1.0 - Math.cos(t * Math.PI)) * 0.5f;  // 0 at centre, 1 at edge
                     int   d = -(int)(depth * (1f - profile));
                     d = Math.min(d, -1); // toujours creuser d'au moins 1
@@ -192,15 +172,11 @@ public final class RiverNetwork {
         return new ChunkMaps(depression, water);
     }
 
-    // -------------------------------------------------------------------------
-    // Geometry: smoothed centre-line with Catmull-Rom-like tangents
-    // -------------------------------------------------------------------------
-
     private static final int CURVE_SAMPLES = 12;
 
     /**
      * Distance from (px,pz) to the smoothed centre-line of an edge.
-     * Uses a simple cardinal-spline: the tangent at each endpoint is the
+     * Uses a simple cardinal-spline : the tangent at each endpoint is the
      * direction to its upstream/downstream neighbor (approximated from the
      * D8 direction). This eliminates the 45° staircase of raw D8 segments.
      *
@@ -213,11 +189,11 @@ public final class RiverNetwork {
         boolean meander = (edge.cls == RiverClass.MAJOR_RIVER && edge.slope < 0.008f);
 
         if (!meander && !isDiagonal(edge)) {
-            // Axis-aligned segment: no smoothing needed
+            // Axis-aligned segment : no smoothing needed
             return distToSegment(px, pz, ax, az, bx, bz);
         }
 
-        // Sample a polyline: straight line + optional sinusoidal meander
+        // Sample a polyline : straight line + optional sinusoidal meander
         float len = dist(ax, az, bx, bz);
         if (len < 1e-3f) return dist(px, pz, ax, az);
 

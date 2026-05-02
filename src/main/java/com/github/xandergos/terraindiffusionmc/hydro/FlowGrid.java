@@ -16,7 +16,7 @@ public final class FlowGrid {
     static final int[] DX = { 0,  1, 1, 1, 0, -1, -1, -1};
     static final int[] DZ = {-1, -1, 0, 1, 1,  1,  0, -1};
 
-    /** Sentinel: no downhill neighbour (local sink). */
+    /** Sentinel : no downhill neighbor (local sink). */
     public static final byte SINK = (byte) 0xFF;
 
     public final int width;
@@ -34,8 +34,6 @@ public final class FlowGrid {
     /** Local slope in m/m (positive = downhill). */
     public final float[] slope;
 
-    // -------------------------------------------------------------------------
-
     private FlowGrid(int width, int height) {
         this.width   = width;
         this.height  = height;
@@ -43,10 +41,6 @@ public final class FlowGrid {
         this.logAcc  = new float[width * height];
         this.slope   = new float[width * height];
     }
-
-    // -------------------------------------------------------------------------
-    // Factory
-    // -------------------------------------------------------------------------
 
     /**
      * Build a FlowGrid from a heightmap.
@@ -59,7 +53,7 @@ public final class FlowGrid {
         int W = heightmap[0].length;
         FlowGrid g = new FlowGrid(W, H);
 
-        // --- 1. Flow direction (D8 steepest descent) -------------------------
+        // 1. Flow direction (D8 steepest descent)
         for (int z = 0; z < H; z++) {
             for (int x = 0; x < W; x++) {
                 float h = heightmap[z][x];
@@ -83,7 +77,7 @@ public final class FlowGrid {
             }
         }
 
-        // --- 2. Flow accumulation (topological sort / BFS) -------------------
+        // 2. Flow accumulation (topological sort / BFS)
         int   N        = W * H;
         int[] inDegree = new int[N];
         float[] rawAcc = new float[N];
@@ -121,10 +115,6 @@ public final class FlowGrid {
 
         return g;
     }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
 
     public int index(int x, int z) { return z * width + x; }
 

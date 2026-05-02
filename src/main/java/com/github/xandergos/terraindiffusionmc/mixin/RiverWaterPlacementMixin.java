@@ -17,9 +17,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * After surface generation, fills carved river beds with water.
+ * After surface generation fills carved river beds with water.
  * Targets the concrete NoiseChunkGenerator.buildSurface overload which
- * delegates to the internal surface builder — it has a proper RETURN.
+ * delegates to the internal surface builder : it has a proper RETURN.
  */
 @Mixin(NoiseChunkGenerator.class)
 public abstract class RiverWaterPlacementMixin {

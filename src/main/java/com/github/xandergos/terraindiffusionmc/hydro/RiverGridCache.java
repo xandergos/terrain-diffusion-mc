@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h3>Region layout</h3>
  * Each cached region covers {@value REGION_TILES}×{@value REGION_TILES} heightmap tiles.
  * With the default tile_size=256 and cellSize=8, each region is 1024×1024 blocks
- * and 128×128 coarse cells — large enough that flow accumulation is meaningful
+ * and 128×128 coarse cells ; large enough that flow accumulation is meaningful
  * across tile boundaries.
  *
  * <h3>Padding</h3>
@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h3>Thread safety</h3>
  * {@code computeIfAbsent} on {@link ConcurrentHashMap} may call the supplier more than
- * once under contention, but suppliers are idempotent (same heightmap → same result).
+ * once under contention but suppliers are idempotent (same heightmap → same result).
  */
 public final class RiverGridCache {
 
@@ -40,8 +40,6 @@ public final class RiverGridCache {
     /** Padding in coarse cells added around each region for accumulation correctness. */
     private static final int PADDING_CELLS = 4;
 
-    // -------------------------------------------------------------------------
-
     private record RegionKey(int regionX, int regionZ) {}
 
     /** Per-region data: the flow grid + extracted edges for the *inner* area. */
@@ -53,10 +51,6 @@ public final class RiverGridCache {
     private static final ConcurrentHashMap<Long, RiverNetwork.ChunkMaps> CHUNK_CACHE = new ConcurrentHashMap<>();
 
     private static final int MAX_CHUNK_CACHE = 256;
-
-    // -------------------------------------------------------------------------
-    // Public API
-    // -------------------------------------------------------------------------
 
     /**
      * Returns the pre-computed ChunkMaps (depression + water) for a 16×16 chunk.
@@ -88,7 +82,7 @@ public final class RiverGridCache {
     }
 
     /**
-     * Convenience: depression only (for density function).
+     * Convenience : depression only (for density function).
      */
     public static int[] getDepressionMapForChunk(int chunkX, int chunkZ) {
         return getMapsForChunk(chunkX, chunkZ).depression();
@@ -107,10 +101,6 @@ public final class RiverGridCache {
         CHUNK_CACHE.clear();
         LOG.debug("[hydro] RiverGridCache cleared");
     }
-
-    // -------------------------------------------------------------------------
-    // Internal
-    // -------------------------------------------------------------------------
 
     private static RegionData getOrCompute(int worldX, int worldZ, int tileSize) {
         int regionBlockSize = REGION_TILES * tileSize;
@@ -168,7 +158,7 @@ public final class RiverGridCache {
                 innerWidthBlocks, innerHeightBlocks);
     }
 
-    /** Downsample heightmap with nearest-neighbour, average over the cell. */
+    /** Downsample heightmap with nearest-neighbor, average over the cell. */
     private static short[][] downsample(short[][] src, int srcH, int srcW,
                                         int cellSize, int outH, int outW) {
         short[][] out = new short[outH][outW];
@@ -196,18 +186,18 @@ public final class RiverGridCache {
      * fetch origin into world-block coords (the edges store world coords implicitly via
      * the cellSize multiplier inside buildDepressionMap).
      *
-     * The edge grid coords are already correct for use with CELL_SIZE; we just need to
+     * The edge grid coords are already correct for use with CELL_SIZE ; we just need to
      * add the fetch origin so that (gridX * CELL_SIZE) == worldX.
      */
     private static RiverNetwork.RiverEdge shiftEdge(RiverNetwork.RiverEdge e,
                                                     int fetchOriginX, int fetchOriginZ,
                                                     int cellSize) {
-        // Convert coarse cell → world coords, then back to coarse (just store offset)
+        // Convert coarse cell → world coords then back to coarse (just store offset)
         // Actually buildDepressionMap uses (gridX + 0.5) * cellSize for world coords.
-        // We need the gridX to produce the correct world position:
+        // We need the gridX to produce the correct world position :
         //   (gridX + 0.5) * cellSize + fetchOriginX == real world X
-        // So shift: use fractional origin trick by embedding origin in a wrapper edge.
-        // Simplest: create a new RiverEdge where fromX/toX already include the fetch offset in cells.
+        // So shift : use fractional origin trick by embedding origin in a wrapper edge.
+        // Simplest : create a new RiverEdge where fromX/toX already include the fetch offset in cells.
         int fxCells = (int)(fetchOriginX / (float) cellSize);
         int fzCells = (int)(fetchOriginZ / (float) cellSize);
         return new RiverNetwork.RiverEdge(
