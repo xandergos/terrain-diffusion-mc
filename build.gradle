@@ -9,21 +9,22 @@ import java.security.MessageDigest
 
 def useCuda = project.hasProperty('useCuda') && project.property('useCuda').toString().toLowerCase() == 'true'
 def useDml = project.hasProperty('useDml') && project.property('useDml').toString().toLowerCase() == 'true'
+def useCoreml = project.hasProperty('useCoreml') && project.property('useCoreml').toString().toLowerCase() == 'true'
 def useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
 def withSourcesJar = project.hasProperty('withSourcesJar') && project.property('withSourcesJar').toString().toLowerCase() == 'true'
 
-if ([useCuda, useDml, useCpu].count { it } > 1) {
-    throw new GradleException("Only one of -PuseCuda, -PuseDml, or -PuseCpu may be specified at a time.")
+if ([useCuda, useDml, useCoreml, useCpu].count { it } > 1) {
+    throw new GradleException("Only one of -PuseCuda, -PuseDml, -PuseCoreml, or -PuseCpu may be specified at a time.")
 }
-if (!useDml && !useCpu && !useCuda) useDml = true
+if (!useDml && !useCpu && !useCuda && !useCoreml) useDml = true
 
-println "Build variant: ${useCuda ? 'CUDA' : useDml ? 'DirectML (Windows)' : 'CPU'}"
+println "Build variant: ${useCuda ? 'CUDA' : useDml ? 'DirectML (Windows)' : useCoreml ? 'CoreML (macOS)' : 'CPU'}"
 def modelRepositorySlug = 'xandergos/terrain-diffusion-30m-onnx'
 def modelRepositoryRevision = 'ad2df557eca5645f588766101cf3bc3682455c3e'
 def generatedManifestDirectory = layout.buildDirectory.dir('generated/model-assets').get().asFile
 def generatedManifestFile = new File(generatedManifestDirectory, 'model-assets-manifest.json')
 
-def buildVariant = useCuda ? 'cuda' : useDml ? 'windows' : 'cpu'
+def buildVariant = useCuda ? 'cuda' : useDml ? 'windows' : useCoreml ? 'mac' : 'cpu'
 version = "${project.mod_version}-${buildVariant}+${project.minecraft_version}"
 group = project.maven_group
 
@@ -74,7 +75,7 @@ dependencies {
     if (useCuda) {
         implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
         include "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
-    } else if (useCpu) {
+    } else if (useCoreml || useCpu) {
         implementation "com.microsoft.onnxruntime:onnxruntime:1.20.0"
         include "com.microsoft.onnxruntime:onnxruntime:1.20.0"
     } else if (useDml) {
@@ -221,7 +222,7 @@ tasks.register('generateModelAssetManifest') {
 def isWindows = System.getProperty('os.name').toLowerCase().startsWith('windows')
 def gradlewExecutable = rootProject.file(isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
 
-['Cuda', 'Dml', 'Cpu'].each { variant ->
+['Cuda', 'Dml', 'Coreml', 'Cpu'].each { variant ->
     tasks.register("build${variant}", Exec) {
         workingDir rootProject.projectDir
         commandLine gradlewExecutable, 'build', "-Puse${variant}=true"
@@ -229,7 +230,7 @@ def gradlewExecutable = rootProject.file(isWindows ? 'gradlew.bat' : 'gradlew').
 }
 
 tasks.register('buildAll') {
-    dependsOn 'buildCuda', 'buildDml', 'buildCpu'
+    dependsOn 'buildCuda', 'buildDml', 'buildCoreml', 'buildCpu'
 }
 
 String sha256Hex(byte[] fileBytes) {
