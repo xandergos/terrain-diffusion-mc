@@ -7,13 +7,11 @@ import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
 import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionDensityFunction;
-import com.github.xandergos.terraindiffusionmc.world.RiverFluidPlacement;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
@@ -36,6 +34,11 @@ public class TerrainDiffusionMc implements ModInitializer {
     @Override
     public void onInitialize() {
         LOG.info("Initializing terrain-diffusion-mc");
+
+        // Must run during mod initialization before the registries are frozen.
+        // River material placement uses these custom layered blocks during world generation.
+        ModBlocks.register();
+
         Registry.register(Registries.BIOME_SOURCE, Identifier.of(MOD_ID, "terrain_diffusion"), TerrainDiffusionBiomeSource.CODEC);
         Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "terrain_diffusion"), TerrainDiffusionDensityFunction.CODEC);
 
@@ -43,7 +46,6 @@ public class TerrainDiffusionMc implements ModInitializer {
         PipelineModels.load();
 
         ServerLifecycleEvents.SERVER_STARTING.register(server -> LocalTerrainProvider.clearCache());
-        ServerChunkEvents.CHUNK_GENERATE.register(RiverFluidPlacement::onChunkGenerate);
 
         ServerWorldEvents.LOAD.register((server, world) -> {
             if (world.getRegistryKey() == World.OVERWORLD) {
@@ -57,9 +59,6 @@ public class TerrainDiffusionMc implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(literal("td-explore").executes(TerrainDiffusionMc::executeExplore))
         );
-
-        // layers nature blocks
-        ModBlocks.register();
     }
 
     private static int executeExplore(CommandContext<ServerCommandSource> ctx) {

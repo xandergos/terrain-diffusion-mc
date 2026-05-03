@@ -45,14 +45,21 @@ public final class LocalTerrainProvider {
     public static final class HeightmapData {
         public final short[][] heightmap;
         public final short[][] biomeIds;
+        /** Optional river render-class grid : 0 none, 1 bank, 2 tiny stream, 3 small stream or 4 full river. */
+        public final byte[][] riverCells;
         public final int width;
         public final int height;
 
         public HeightmapData(short[][] heightmap, short[][] biomeIds, int width, int height) {
-            this.heightmap = heightmap;
-            this.biomeIds  = biomeIds;
-            this.width     = width;
-            this.height    = height;
+            this(heightmap, biomeIds, null, width, height);
+        }
+
+        public HeightmapData(short[][] heightmap, short[][] biomeIds, byte[][] riverCells, int width, int height) {
+            this.heightmap  = heightmap;
+            this.biomeIds   = biomeIds;
+            this.riverCells = riverCells;
+            this.width      = width;
+            this.height     = height;
         }
     }
 
@@ -122,7 +129,7 @@ public final class LocalTerrainProvider {
      * Non-blocking lookup for generation callbacks.
      *
      * <p>This intentionally does not start ML inference and does not wait on an
-     * unfinished tile. Chunk lifecycle callbacks must not call fetchHeightmap(),
+     * unfinished tile. Chunk lifecycle callbacks must not call fetchHeightmap()
      * because that method can block a chunk worker for a full model inference.
      */
     public static HeightmapData getReadyHeightmap(int i1, int j1, int i2, int j2) {
@@ -162,7 +169,7 @@ public final class LocalTerrainProvider {
     /**
      * Run elevation and climate inference on the inference thread.
      *
-     * @return float[2]: [0] = elev (H*W), [1] = climate (5*H*W, or null)
+     * @return float[2] : [0] = elev (H*W), [1] = climate (5*H*W, or null)
      */
     public static float[][] getPipelineData(int i1, int j1, int i2, int j2, boolean withClimate) throws Exception {
         return submitToInferenceThread(() -> getInstance().pipeline.get(i1, j1, i2, j2, withClimate));
@@ -206,9 +213,9 @@ public final class LocalTerrainProvider {
 
     /**
      * Fetch heightmap for a block-coordinate region (i=Z, j=X).
-     * Coordinates are in block space; scale from config determines blocks per native pixel.
+     * Coordinates are in block space ; scale from config determines blocks per native pixel.
      * Blocks the calling thread until the tile is ready (one tile can take 10–30+ seconds).
-     * If the caller is the server or a chunk worker, the game will stall until this returns.
+     * If the caller is the server or a chunk worker the game will stall until this returns.
      */
     public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
         CacheKey key = new CacheKey(i1, j1, i2, j2);
@@ -289,7 +296,7 @@ public final class LocalTerrainProvider {
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
         MassFluxRiverCarver.applyRiverBiomes(biomeFlat, river.riverMask);
-        return buildHeightmapData(river.elevation, biomeFlat, H, W);
+        return buildHeightmapData(river.elevation, biomeFlat, river.riverCells, H, W);
     }
 
     // =========================================================================
@@ -306,7 +313,7 @@ public final class LocalTerrainProvider {
         int i2n = -Math.floorDiv(-i2, scale);
         int j2n = -Math.floorDiv(-j2, scale);
 
-        // Native padding: 1 pixel for bilinear/slope plus a wider river-routing window.
+        // Native padding : 1 pixel for bilinear/slope plus a wider river-routing window.
         int riverPad = MassFluxRiverCarver.ANALYSIS_PADDING_BLOCKS;
         int nativePad = 2 + Math.max(1, (int) Math.ceil(riverPad / (float) scale));
         int i1p = i1n - nativePad, j1p = j1n - nativePad;
@@ -317,7 +324,7 @@ public final class LocalTerrainProvider {
         float[] elevNativeFlat    = out[0];
         float[] climateNativeFlat = out[1];
 
-        // Bilinear upsample elevation: (nH, nW) → (nH*scale, nW*scale)
+        // Bilinear upsample elevation : (nH, nW) -> (nH*scale, nW*scale)
         float[][] elevNative2D = to2D(elevNativeFlat, nH, nW);
         float[][] elevUp = LaplacianUtils.bilinearResize(elevNative2D, nH * scale, nW * scale);
 
@@ -349,7 +356,7 @@ public final class LocalTerrainProvider {
 
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
         MassFluxRiverCarver.applyRiverBiomes(biomeFlat, river.riverMask);
-        return buildHeightmapData(elevOut, biomeFlat, H, W);
+        return buildHeightmapData(elevOut, biomeFlat, river.riverCells, H, W);
     }
 
     // =========================================================================
@@ -435,15 +442,18 @@ public final class LocalTerrainProvider {
         return a;
     }
 
-    private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, int H, int W) {
+    private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, byte[] riverFlat, int H, int W) {
         short[][] heightmap = new short[H][W];
         short[][] biomeIds  = new short[H][W];
+        byte[][] riverCells = riverFlat == null ? null : new byte[H][W];
         for (int r = 0; r < H; r++)
             for (int c = 0; c < W; c++) {
-                float e = elevFlat[r * W + c];
+                int idx = r * W + c;
+                float e = elevFlat[idx];
                 heightmap[r][c] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
-                biomeIds[r][c]  = biomeFlat[r * W + c];
+                biomeIds[r][c]  = biomeFlat[idx];
+                if (riverCells != null) riverCells[r][c] = riverFlat[idx];
             }
-        return new HeightmapData(heightmap, biomeIds, W, H);
+        return new HeightmapData(heightmap, biomeIds, riverCells, W, H);
     }
 }
