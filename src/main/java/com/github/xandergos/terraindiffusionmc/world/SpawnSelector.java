@@ -27,6 +27,7 @@ public final class SpawnSelector {
     private static final int COARSE_GRID_SPACING = 0; // coarse tiles between samples
     private static final int TILE_GRID_SIZE = 4;      // number of chunk samples along on axis
     private static final float MIN_VALID_WEIGHT = 1.0e-8f;
+    private static final int MIN_SPAWN_ELEVATION = 10; // minimum elevation for valid spawn Coarse chunk (in meters)
 
     private SpawnSelector() {
     }
@@ -144,7 +145,7 @@ public final class SpawnSelector {
         LOG.debug("SpawnSelector: coarse sample at ({}, {}) has raw={} elev={} (w={})", ci, cj, raw, elev, weight);
 
         // Pick first option above sea level
-        if (elev > 0) {
+        if (elev > MIN_SPAWN_ELEVATION) {
             LOG.debug("SpawnSelector: coarse sample found ({}, {}) elev={} (w={})", ci, cj, elev, weight);
             return new CoarseSample(ci, cj);
         }
