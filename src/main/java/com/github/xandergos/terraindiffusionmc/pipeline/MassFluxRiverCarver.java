@@ -5,15 +5,17 @@ import java.util.Comparator;
 import java.util.PriorityQueue;
 
 /**
- * Local mass-conserving multi-flow river extraction and carving.
+ * Local, mass-conserving river extraction and centerline-based carving.
  *
- * <p>This is a practical in-game analogue of the Rivix/RiverTools Mass Flux workflow :
- * derive flow from a DEM-like height field, conserve one unit of water mass per grid
- * cell, split that mass among downslope neighbors, accumulate total contributing
- * area and then carve channels where contributing area is high.</p>
+ * <p>The routing pass keeps the previous RiverTools/Rivix-inspired mass-flux idea for
+ * contributing area, but the carving pass no longer treats every high-accumulation
+ * raster cell as a wide river. It first extracts a one-cell-wide primary channel
+ * centerline from a D8 tree, computes a Shreve-like magnitude on that tree, combines
+ * it with mass-flux accumulation, and then rasterizes calibrated channel cross-sections
+ * around the resulting polyline segments.</p>
  *
  * <p>The original RiverTools implementation is not public API. This implementation is
- * intentionally self-contained, deterministic and chunk-friendly.</p>
+ * self-contained, deterministic, and chunk-friendly.</p>
  */
 public final class MassFluxRiverCarver {
     public static final short RIVER_BIOME_ID = 7;
@@ -30,14 +32,21 @@ public final class MassFluxRiverCarver {
     };
 
     private static final float FLOW_EXPONENT = 1.15f;
-    private static final float START_ACCUM_CELLS = 72f;
-    private static final float BANKFULL_ACCUM_CELLS = 560f;
+
+    // Centerline initiation. D8 accumulation gives crisp lines; mass-flux accumulation sizes them.
+    private static final float START_D8_ACCUM_CELLS = 96f;
+    private static final float START_MASS_ACCUM_CELLS = 58f;
+    private static final float BANKFULL_ACCUM_CELLS = 900f;
+
+    private static final float MIN_CHANNEL_SLOPE = 0.00008f;
+    private static final float MIN_DROP_BLOCKS = 0.045f;
 
     private MassFluxRiverCarver() {
     }
 
     public static final class Result {
         public final float[] elevation;
+        /** Water-channel mask only. Carved banks are deliberately not marked as river. */
         public final boolean[] riverMask;
         public final float[] contributingAreaCells;
 
@@ -58,7 +67,7 @@ public final class MassFluxRiverCarver {
      * @param targetC0 left column of the target window inside routingElev
      * @param targetH target window height
      * @param targetW target window width
-     * @param pixelSizeM horizontal size represented by one grid cell in metres
+     * @param pixelSizeM horizontal size represented by one grid cell, in metres
      */
     public static Result carveTarget(
             float[] routingElev,
@@ -79,20 +88,25 @@ public final class MassFluxRiverCarver {
 
         float[] hydroSurface = boxBlur(routingElev, routingH, routingW, 2);
         hydroSurface = priorityFloodEpsilon(hydroSurface, routingH, routingW, pixelSizeM);
-        float[] areaCells = accumulateMassFlux(hydroSurface, routingElev, routingH, routingW);
+
+        Integer[] order = sortedHighToLow(hydroSurface);
+        int[] primaryDown = computePrimaryDownstream(hydroSurface, routingElev, routingH, routingW, pixelSizeM);
+        float[] massAreaCells = accumulateMassFlux(hydroSurface, routingElev, routingH, routingW, order);
+        float[] d8AreaCells = accumulateD8(primaryDown, routingElev, routingH, routingW, order);
+        boolean[] centerline = extractCenterline(primaryDown, hydroSurface, routingElev, massAreaCells, d8AreaCells,
+                routingH, routingW, pixelSizeM);
+        float[] shreve = computeShreveMagnitude(primaryDown, centerline, order);
 
         float[] carved = crop(routingElev, routingH, routingW, targetR0, targetC0, targetH, targetW);
         boolean[] riverMask = new boolean[targetH * targetW];
-        carveChannels(routingElev, areaCells, routingH, routingW, targetR0, targetC0, targetH, targetW,
-                pixelSizeM, carved, riverMask);
+        carvePolylineChannels(routingElev, hydroSurface, primaryDown, centerline, massAreaCells, d8AreaCells, shreve,
+                routingH, routingW, targetR0, targetC0, targetH, targetW, pixelSizeM, carved, riverMask);
 
-        float[] targetArea = crop(areaCells, routingH, routingW, targetR0, targetC0, targetH, targetW);
+        float[] targetArea = crop(massAreaCells, routingH, routingW, targetR0, targetC0, targetH, targetW);
         return new Result(carved, riverMask, targetArea);
     }
 
-    /**
-     * Marks river biomes after the terrain biome classifier has run.
-     */
+    /** Marks river biomes after the terrain biome classifier has run. */
     public static void applyRiverBiomes(short[] biomeIds, boolean[] riverMask) {
         if (biomeIds == null || riverMask == null) return;
         int n = Math.min(biomeIds.length, riverMask.length);
@@ -101,16 +115,62 @@ public final class MassFluxRiverCarver {
         }
     }
 
-    private static float[] accumulateMassFlux(float[] hydro, float[] originalElev, int H, int W) {
+    private static Integer[] sortedHighToLow(float[] hydro) {
+        Integer[] order = new Integer[hydro.length];
+        for (int i = 0; i < hydro.length; i++) order[i] = i;
+        Arrays.sort(order, Comparator.comparingDouble((Integer idx) -> hydro[idx]).reversed());
+        return order;
+    }
+
+    private static int[] computePrimaryDownstream(float[] hydro, float[] originalElev, int H, int W, float pixelSizeM) {
+        int[] down = new int[H * W];
+        Arrays.fill(down, -1);
+        for (int r = 1; r < H - 1; r++) {
+            for (int c = 1; c < W - 1; c++) {
+                int idx = r * W + c;
+                if (originalElev[idx] <= 0f) continue;
+                float z = hydro[idx];
+                float bestSlope = 0f;
+                int best = -1;
+                for (int k = 0; k < 8; k++) {
+                    int rr = r + DR[k];
+                    int cc = c + DC[k];
+                    int ni = rr * W + cc;
+                    float dz = z - hydro[ni];
+                    if (dz <= 1.0e-6f) continue;
+                    float slope = dz / (DIST[k] * pixelSizeM);
+                    if (slope > bestSlope) {
+                        bestSlope = slope;
+                        best = ni;
+                    }
+                }
+                down[idx] = best;
+            }
+        }
+        return down;
+    }
+
+    private static float[] accumulateD8(int[] primaryDown, float[] originalElev, int H, int W, Integer[] order) {
         int n = H * W;
         float[] accum = new float[n];
         for (int i = 0; i < n; i++) {
             accum[i] = originalElev[i] > 0f ? 1f : 0f;
         }
+        for (int idx : order) {
+            int dn = primaryDown[idx];
+            if (dn >= 0 && accum[idx] > 0f) {
+                accum[dn] += accum[idx];
+            }
+        }
+        return accum;
+    }
 
-        Integer[] order = new Integer[n];
-        for (int i = 0; i < n; i++) order[i] = i;
-        Arrays.sort(order, Comparator.comparingDouble((Integer idx) -> hydro[idx]).reversed());
+    private static float[] accumulateMassFlux(float[] hydro, float[] originalElev, int H, int W, Integer[] order) {
+        int n = H * W;
+        float[] accum = new float[n];
+        for (int i = 0; i < n; i++) {
+            accum[i] = originalElev[i] > 0f ? 1f : 0f;
+        }
 
         int[] dn = new int[8];
         float[] wt = new float[8];
@@ -149,9 +209,57 @@ public final class MassFluxRiverCarver {
         return accum;
     }
 
-    private static void carveChannels(
+    private static boolean[] extractCenterline(
+            int[] primaryDown,
+            float[] hydro,
+            float[] originalElev,
+            float[] massArea,
+            float[] d8Area,
+            int H,
+            int W,
+            float pixelSizeM
+    ) {
+        boolean[] out = new boolean[H * W];
+        for (int r = 1; r < H - 1; r++) {
+            for (int c = 1; c < W - 1; c++) {
+                int idx = r * W + c;
+                int dn = primaryDown[idx];
+                if (dn < 0 || originalElev[idx] <= 1f) continue;
+                float dz = Math.max(0f, hydro[idx] - hydro[dn]);
+                float slope = dz / (distanceBetween(idx, dn, W) * pixelSizeM);
+
+                // Crisp one-cell channels come from D8 accumulation; mass area prevents tiny noisy paths.
+                if (d8Area[idx] >= START_D8_ACCUM_CELLS && massArea[idx] >= START_MASS_ACCUM_CELLS) {
+                    if (slope >= MIN_CHANNEL_SLOPE || d8Area[idx] >= START_D8_ACCUM_CELLS * 2.0f) {
+                        out[idx] = true;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static float[] computeShreveMagnitude(int[] primaryDown, boolean[] centerline, Integer[] order) {
+        float[] shreve = new float[centerline.length];
+        for (int idx : order) {
+            if (!centerline[idx]) continue;
+            if (shreve[idx] <= 0f) shreve[idx] = 1f;
+            int dn = primaryDown[idx];
+            if (dn >= 0 && centerline[dn]) {
+                shreve[dn] += shreve[idx];
+            }
+        }
+        return shreve;
+    }
+
+    private static void carvePolylineChannels(
             float[] routingElev,
-            float[] areaCells,
+            float[] hydro,
+            int[] primaryDown,
+            boolean[] centerline,
+            float[] massArea,
+            float[] d8Area,
+            float[] shreve,
             int routingH,
             int routingW,
             int targetR0,
@@ -162,53 +270,211 @@ public final class MassFluxRiverCarver {
             float[] carved,
             boolean[] riverMask
     ) {
-        int rMin = Math.max(1, targetR0 - 16);
-        int cMin = Math.max(1, targetC0 - 16);
-        int rMax = Math.min(routingH - 2, targetR0 + targetH + 16);
-        int cMax = Math.min(routingW - 2, targetC0 + targetW + 16);
+        float minDropM = pixelSizeM * MIN_DROP_BLOCKS;
+        float[] bed = buildMonotoneBed(routingElev, primaryDown, centerline, massArea, d8Area, shreve,
+                routingH, routingW, pixelSizeM, minDropM);
+
+        int rMin = Math.max(1, targetR0 - ANALYSIS_PADDING_BLOCKS);
+        int cMin = Math.max(1, targetC0 - ANALYSIS_PADDING_BLOCKS);
+        int rMax = Math.min(routingH - 2, targetR0 + targetH + ANALYSIS_PADDING_BLOCKS);
+        int cMax = Math.min(routingW - 2, targetC0 + targetW + ANALYSIS_PADDING_BLOCKS);
 
         for (int r = rMin; r < rMax; r++) {
             for (int c = cMin; c < cMax; c++) {
                 int idx = r * routingW + c;
-                float acc = areaCells[idx];
-                float z = routingElev[idx];
-                if (z <= 1f || acc < START_ACCUM_CELLS) continue;
+                if (!centerline[idx]) continue;
 
-                float mature = saturate((acc - START_ACCUM_CELLS) / (BANKFULL_ACCUM_CELLS - START_ACCUM_CELLS));
-                float accScale = (float) Math.pow(acc / START_ACCUM_CELLS, 0.42f);
-                float halfWidthCells = Math.min(9.5f, 0.85f + 0.72f * accScale + 5.5f * mature);
-                float influenceCells = halfWidthCells + 2.5f;
-                float depthM = Math.min(0.9f * pixelSizeM, 1.8f + pixelSizeM * (0.06f + 0.12f * mature) * accScale);
-
-                int rr0 = Math.max(targetR0, (int) Math.floor(r - influenceCells));
-                int rr1 = Math.min(targetR0 + targetH - 1, (int) Math.ceil(r + influenceCells));
-                int cc0 = Math.max(targetC0, (int) Math.floor(c - influenceCells));
-                int cc1 = Math.min(targetC0 + targetW - 1, (int) Math.ceil(c + influenceCells));
-
-                for (int rr = rr0; rr <= rr1; rr++) {
-                    float dr = rr - r;
-                    for (int cc = cc0; cc <= cc1; cc++) {
-                        float dc = cc - c;
-                        float d = (float) Math.sqrt(dr * dr + dc * dc);
-                        if (d > influenceCells) continue;
-
-                        int outIdx = (rr - targetR0) * targetW + (cc - targetC0);
-                        float normalized = d / Math.max(0.001f, halfWidthCells);
-                        float cut;
-                        if (normalized <= 1f) {
-                            float bowl = 1f - normalized * normalized;
-                            cut = depthM * (0.35f + 0.65f * bowl * bowl);
-                            riverMask[outIdx] = riverMask[outIdx] || normalized < 0.75f;
-                        } else {
-                            float bank = 1f - ((d - halfWidthCells) / Math.max(0.001f, influenceCells - halfWidthCells));
-                            cut = depthM * 0.22f * bank * bank;
-                        }
-                        carved[outIdx] = Math.min(carved[outIdx], routingElev[idx] - cut);
-                    }
+                int dn = primaryDown[idx];
+                if (dn >= 0 && centerline[dn]) {
+                    rasterizeSegment(idx, dn, routingElev, bed, massArea, d8Area, shreve,
+                            routingW, targetR0, targetC0, targetH, targetW, pixelSizeM, carved, riverMask);
+                } else {
+                    rasterizePoint(idx, routingElev, bed, massArea, d8Area, shreve,
+                            routingW, targetR0, targetC0, targetH, targetW, pixelSizeM, carved, riverMask);
                 }
             }
         }
     }
+
+    private static float[] buildMonotoneBed(
+            float[] routingElev,
+            int[] primaryDown,
+            boolean[] centerline,
+            float[] massArea,
+            float[] d8Area,
+            float[] shreve,
+            int H,
+            int W,
+            float pixelSizeM,
+            float minDropM
+    ) {
+        int n = routingElev.length;
+        float[] bed = new float[n];
+        Arrays.fill(bed, Float.NaN);
+        for (int idx = 0; idx < n; idx++) {
+            if (!centerline[idx]) continue;
+            ChannelShape shape = shapeAt(idx, massArea, d8Area, shreve, pixelSizeM);
+            bed[idx] = routingElev[idx] - shape.depthM;
+        }
+
+        Integer[] lowToHigh = new Integer[n];
+        for (int i = 0; i < n; i++) lowToHigh[i] = i;
+        Arrays.sort(lowToHigh, Comparator.comparingDouble((Integer idx) -> routingElev[idx]));
+
+        // Reduce stair-step artifacts: upstream beds should not be lower than their downstream parent.
+        for (int pass = 0; pass < 2; pass++) {
+            for (int idx : lowToHigh) {
+                if (!centerline[idx]) continue;
+                int dn = primaryDown[idx];
+                if (dn >= 0 && centerline[dn] && !Float.isNaN(bed[dn])) {
+                    bed[idx] = Math.max(bed[idx], bed[dn] + minDropM * distanceBetween(idx, dn, W));
+                }
+            }
+        }
+        return bed;
+    }
+
+    private static void rasterizeSegment(
+            int a,
+            int b,
+            float[] routingElev,
+            float[] bed,
+            float[] massArea,
+            float[] d8Area,
+            float[] shreve,
+            int routingW,
+            int targetR0,
+            int targetC0,
+            int targetH,
+            int targetW,
+            float pixelSizeM,
+            float[] carved,
+            boolean[] riverMask
+    ) {
+        int ar = a / routingW, ac = a - ar * routingW;
+        int br = b / routingW, bc = b - br * routingW;
+        ChannelShape sa = shapeAt(a, massArea, d8Area, shreve, pixelSizeM);
+        ChannelShape sb = shapeAt(b, massArea, d8Area, shreve, pixelSizeM);
+        float bankRadius = Math.max(sa.bankRadiusCells, sb.bankRadiusCells);
+        int rr0 = Math.max(targetR0, (int) Math.floor(Math.min(ar, br) - bankRadius - 1));
+        int rr1 = Math.min(targetR0 + targetH - 1, (int) Math.ceil(Math.max(ar, br) + bankRadius + 1));
+        int cc0 = Math.max(targetC0, (int) Math.floor(Math.min(ac, bc) - bankRadius - 1));
+        int cc1 = Math.min(targetC0 + targetW - 1, (int) Math.ceil(Math.max(ac, bc) + bankRadius + 1));
+
+        float vx = bc - ac;
+        float vy = br - ar;
+        float len2 = vx * vx + vy * vy;
+        for (int rr = rr0; rr <= rr1; rr++) {
+            for (int cc = cc0; cc <= cc1; cc++) {
+                float t = len2 <= 1.0e-6f ? 0f : (((cc - ac) * vx + (rr - ar) * vy) / len2);
+                t = saturate(t);
+                float pr = ar + t * vy;
+                float pc = ac + t * vx;
+                float dr = rr - pr;
+                float dc = cc - pc;
+                float dist = (float) Math.sqrt(dr * dr + dc * dc);
+
+                ChannelShape s = interpolate(sa, sb, t);
+                if (dist > s.bankRadiusCells) continue;
+                float centerBed = lerp(safeBed(bed[a], routingElev[a] - sa.depthM), safeBed(bed[b], routingElev[b] - sb.depthM), t);
+                applyCrossSection(dist, s, centerBed, rr, cc, targetR0, targetC0, targetW, carved, riverMask);
+            }
+        }
+    }
+
+    private static void rasterizePoint(
+            int a,
+            float[] routingElev,
+            float[] bed,
+            float[] massArea,
+            float[] d8Area,
+            float[] shreve,
+            int routingW,
+            int targetR0,
+            int targetC0,
+            int targetH,
+            int targetW,
+            float pixelSizeM,
+            float[] carved,
+            boolean[] riverMask
+    ) {
+        int ar = a / routingW, ac = a - ar * routingW;
+        ChannelShape s = shapeAt(a, massArea, d8Area, shreve, pixelSizeM);
+        int rr0 = Math.max(targetR0, (int) Math.floor(ar - s.bankRadiusCells - 1));
+        int rr1 = Math.min(targetR0 + targetH - 1, (int) Math.ceil(ar + s.bankRadiusCells + 1));
+        int cc0 = Math.max(targetC0, (int) Math.floor(ac - s.bankRadiusCells - 1));
+        int cc1 = Math.min(targetC0 + targetW - 1, (int) Math.ceil(ac + s.bankRadiusCells + 1));
+        float centerBed = safeBed(bed[a], routingElev[a] - s.depthM);
+        for (int rr = rr0; rr <= rr1; rr++) {
+            for (int cc = cc0; cc <= cc1; cc++) {
+                float dr = rr - ar;
+                float dc = cc - ac;
+                float dist = (float) Math.sqrt(dr * dr + dc * dc);
+                if (dist > s.bankRadiusCells) continue;
+                applyCrossSection(dist, s, centerBed, rr, cc, targetR0, targetC0, targetW, carved, riverMask);
+            }
+        }
+    }
+
+    private static void applyCrossSection(
+            float dist,
+            ChannelShape s,
+            float centerBed,
+            int rr,
+            int cc,
+            int targetR0,
+            int targetC0,
+            int targetW,
+            float[] carved,
+            boolean[] riverMask
+    ) {
+        int outIdx = (rr - targetR0) * targetW + (cc - targetC0);
+        float target;
+        if (dist <= s.waterRadiusCells) {
+            // Flat-ish low-flow bed, so water is narrow and continuous.
+            float t = dist / Math.max(0.001f, s.waterRadiusCells);
+            target = centerBed + s.depthM * 0.10f * t * t;
+            riverMask[outIdx] = true;
+        } else {
+            // Sloped bank, carved but not filled with water.
+            float t = (dist - s.waterRadiusCells) / Math.max(0.001f, s.bankRadiusCells - s.waterRadiusCells);
+            float bankRise = s.depthM * (0.18f + 0.82f * smoothstep(t));
+            target = centerBed + bankRise;
+        }
+        carved[outIdx] = Math.min(carved[outIdx], target);
+    }
+
+    private static ChannelShape shapeAt(int idx, float[] massArea, float[] d8Area, float[] shreve, float pixelSizeM) {
+        float areaNorm = Math.max(1f, massArea[idx] / START_MASS_ACCUM_CELLS);
+        float d8Norm = Math.max(1f, d8Area[idx] / START_D8_ACCUM_CELLS);
+        float shreveNorm = Math.max(1f, shreve[idx]);
+        float mature = saturate((massArea[idx] - START_MASS_ACCUM_CELLS) / (BANKFULL_ACCUM_CELLS - START_MASS_ACCUM_CELLS));
+
+        // Shreve magnitude handles tributary hierarchy; accumulation keeps width continuous inside long trunks.
+        float flowPriority = 0.62f * (float) Math.pow(areaNorm, 0.34f)
+                + 0.24f * (float) Math.pow(shreveNorm, 0.42f)
+                + 0.14f * (float) Math.pow(d8Norm, 0.25f);
+
+        float waterRadiusCells = clamp(0.48f + 0.28f * flowPriority + 1.15f * mature, 0.62f, 4.9f);
+        float bankRadiusCells = clamp(waterRadiusCells * (1.72f + 0.18f * mature), waterRadiusCells + 0.8f, 8.4f);
+
+        float depthBlocks = clamp(0.92f + 0.34f * (float) Math.pow(areaNorm, 0.27f)
+                        + 0.23f * (float) Math.pow(shreveNorm, 0.35f)
+                        + 1.15f * mature,
+                1.05f, 5.8f);
+        float depthM = depthBlocks * pixelSizeM;
+        return new ChannelShape(waterRadiusCells, bankRadiusCells, depthM);
+    }
+
+    private static ChannelShape interpolate(ChannelShape a, ChannelShape b, float t) {
+        return new ChannelShape(
+                lerp(a.waterRadiusCells, b.waterRadiusCells, t),
+                lerp(a.bankRadiusCells, b.bankRadiusCells, t),
+                lerp(a.depthM, b.depthM, t)
+        );
+    }
+
+    private record ChannelShape(float waterRadiusCells, float bankRadiusCells, float depthM) {}
 
     private static float[] priorityFloodEpsilon(float[] elev, int H, int W, float pixelSizeM) {
         float[] filled = elev.clone();
@@ -301,7 +567,32 @@ public final class MassFluxRiverCarver {
         return out;
     }
 
+    private static float distanceBetween(int a, int b, int W) {
+        int ar = a / W, ac = a - ar * W;
+        int br = b / W, bc = b - br * W;
+        int dr = Math.abs(ar - br);
+        int dc = Math.abs(ac - bc);
+        return (dr == 1 && dc == 1) ? 1.41421356237f : 1f;
+    }
+
+    private static float safeBed(float v, float fallback) {
+        return Float.isNaN(v) ? fallback : v;
+    }
+
+    private static float smoothstep(float t) {
+        t = saturate(t);
+        return t * t * (3f - 2f * t);
+    }
+
+    private static float lerp(float a, float b, float t) {
+        return a + (b - a) * t;
+    }
+
     private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
+    private static float clamp(float v, float lo, float hi) {
         return Math.max(lo, Math.min(hi, v));
     }
 

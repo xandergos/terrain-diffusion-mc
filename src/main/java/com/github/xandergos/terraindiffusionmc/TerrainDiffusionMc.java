@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc;
 
+import com.github.xandergos.terraindiffusionmc.block.ModBlocks;
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
@@ -56,6 +57,9 @@ public class TerrainDiffusionMc implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
                 dispatcher.register(literal("td-explore").executes(TerrainDiffusionMc::executeExplore))
         );
+
+        // layers nature blocks
+        ModBlocks.register();
     }
 
     private static int executeExplore(CommandContext<ServerCommandSource> ctx) {

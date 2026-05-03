@@ -4,6 +4,19 @@
   "terrain-diffusion-mc.world_settings.open_button": "Terrain Settings",
   "terrain-diffusion-mc.world_settings.scale": "World Scale",
   "terrain-diffusion-mc.world_settings.world_scale_description": "Set World Scale for this world.",
-  "terrain-diffusion-mc.world_settings.scale_error": "Scale must be an integer >= 1"
+  "terrain-diffusion-mc.world_settings.scale_error": "Scale must be an integer >= 1",
+
+  "block.terrain-diffusion-mc.sand_layer": "Sand Layer",
+  "block.terrain-diffusion-mc.gravel_layer": "Gravel Layer",
+  "block.terrain-diffusion-mc.dirt_layer": "Dirt Layer",
+  "block.terrain-diffusion-mc.red_sand_layer": "Red Sand Layer",
+  "block.terrain-diffusion-mc.stone_layer": "Stone Layer",
+  "block.terrain-diffusion-mc.diorite_layer": "Diorite Layer",
+  "block.terrain-diffusion-mc.andesite_layer": "Andesite Layer",
+  "block.terrain-diffusion-mc.granite_layer": "Granite Layer",
+  "block.terrain-diffusion-mc.clay_layer": "Clay Layer",
+  "block.terrain-diffusion-mc.coarse_dirt_layer": "Coarse Dirt Layer",
+  "block.terrain-diffusion-mc.calcite_layer": "Calcite Layer",
+  "block.terrain-diffusion-mc.grass_layer": "Grass Layer"
 }
 
