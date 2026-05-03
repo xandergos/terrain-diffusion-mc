@@ -6,11 +6,13 @@ import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
 import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionDensityFunction;
+import com.github.xandergos.terraindiffusionmc.world.RiverFluidPlacement;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
@@ -40,6 +42,7 @@ public class TerrainDiffusionMc implements ModInitializer {
         PipelineModels.load();
 
         ServerLifecycleEvents.SERVER_STARTING.register(server -> LocalTerrainProvider.clearCache());
+        ServerChunkEvents.CHUNK_GENERATE.register(RiverFluidPlacement::onChunkGenerate);
 
         ServerWorldEvents.LOAD.register((server, world) -> {
             if (world.getRegistryKey() == World.OVERWORLD) {

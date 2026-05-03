@@ -5,8 +5,6 @@ import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.Comparator;
@@ -118,6 +116,38 @@ public final class LocalTerrainProvider {
     public static void clearCache() {
         CACHE.clear();
         PENDING.clear();
+    }
+
+    /**
+     * Non-blocking lookup for generation callbacks.
+     *
+     * <p>This intentionally does not start ML inference and does not wait on an
+     * unfinished tile. Chunk lifecycle callbacks must not call fetchHeightmap(),
+     * because that method can block a chunk worker for a full model inference.
+     */
+    public static HeightmapData getReadyHeightmap(int i1, int j1, int i2, int j2) {
+        CacheKey key = new CacheKey(i1, j1, i2, j2);
+
+        CacheEntry cached = CACHE.get(key);
+        if (cached != null) {
+            cached.lastAccessed.set(CACHE_CLOCK.incrementAndGet());
+            return cached.data;
+        }
+
+        Future<HeightmapData> pending = PENDING.get(key);
+        if (pending == null || !pending.isDone()) {
+            return null;
+        }
+
+        try {
+            HeightmapData data = pending.get();
+            if (data != null) {
+                CACHE.put(key, new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet())));
+            }
+            return data;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     // =========================================================================
@@ -252,8 +282,14 @@ public final class LocalTerrainProvider {
         float[] elevFlat = out[0];
         float[] climate  = out[1];
 
+        int riverPad = MassFluxRiverCarver.ANALYSIS_PADDING_BLOCKS;
+        float[] routingElev = pipeline.get(i1 - riverPad, j1 - riverPad, i2 + riverPad, j2 + riverPad, false)[0];
+        MassFluxRiverCarver.Result river = MassFluxRiverCarver.carveTarget(
+                routingElev, H + 2 * riverPad, W + 2 * riverPad, riverPad, riverPad, H, W, NATIVE_RESOLUTION);
+
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
-        return buildHeightmapData(elevFlat, biomeFlat, H, W);
+        MassFluxRiverCarver.applyRiverBiomes(biomeFlat, river.riverMask);
+        return buildHeightmapData(river.elevation, biomeFlat, H, W);
     }
 
     // =========================================================================
@@ -270,9 +306,11 @@ public final class LocalTerrainProvider {
         int i2n = -Math.floorDiv(-i2, scale);
         int j2n = -Math.floorDiv(-j2, scale);
 
-        // 2-pixel native padding (1 for bilinear + 1 for slope)
-        int i1p = i1n - 2, j1p = j1n - 2;
-        int i2p = i2n + 2, j2p = j2n + 2;
+        // Native padding: 1 pixel for bilinear/slope plus a wider river-routing window.
+        int riverPad = MassFluxRiverCarver.ANALYSIS_PADDING_BLOCKS;
+        int nativePad = 2 + Math.max(1, (int) Math.ceil(riverPad / (float) scale));
+        int i1p = i1n - nativePad, j1p = j1n - nativePad;
+        int i2p = i2n + nativePad, j2p = j2n + nativePad;
         int nH = i2p - i1p, nW = j2p - j1p;
 
         float[][] out = pipeline.get(i1p, j1p, i2p, j2p, true);
@@ -284,7 +322,7 @@ public final class LocalTerrainProvider {
         float[][] elevUp = LaplacianUtils.bilinearResize(elevNative2D, nH * scale, nW * scale);
 
         // Crop offsets in the upsampled array
-        int padUp   = 2 * scale;
+        int padUp   = nativePad * scale;
         int offsetI = i1 - i1n * scale;
         int offsetJ = j1 - j1n * scale;
         int cropI1  = padUp + offsetI;
@@ -296,9 +334,21 @@ public final class LocalTerrainProvider {
         // Upsample climate (4, nH, nW) → (4, H, W)
         float[] climate = upsampleClimate(climateNativeFlat, nH, nW, cropI1, cropJ1, H, W, scale, nH * scale, nW * scale);
 
-        float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
+        float[] elevNoisy = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
+
+        float[] riverRoutingElev = cropFlat(
+                elevUp, cropI1 - riverPad, cropJ1 - riverPad, H + 2 * riverPad, W + 2 * riverPad,
+                nH * scale, nW * scale);
+        MassFluxRiverCarver.Result river = MassFluxRiverCarver.carveTarget(
+                riverRoutingElev, H + 2 * riverPad, W + 2 * riverPad, riverPad, riverPad, H, W, pixelSizeM);
+
+        float[] elevOut = elevNoisy.clone();
+        for (int idx = 0; idx < elevOut.length; idx++) {
+            elevOut[idx] = Math.min(elevOut[idx], river.elevation[idx]);
+        }
 
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
+        MassFluxRiverCarver.applyRiverBiomes(biomeFlat, river.riverMask);
         return buildHeightmapData(elevOut, biomeFlat, H, W);
     }
 
