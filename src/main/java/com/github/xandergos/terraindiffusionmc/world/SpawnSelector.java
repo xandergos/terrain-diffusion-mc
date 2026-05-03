@@ -32,45 +32,60 @@ public final class SpawnSelector {
     }
 
     public static SpawnPoint findSpawnPoint(ServerWorld world) {
-        final TileSample coarseTile = calculateCoarseSpawnChunk();
+        final CoarseSample coarseSample = calculateCoarseSpawnChunk();
 
         // If no valid spawn found, default to origin.
-        if (!coarseTile.hasSample()) {
+        if (coarseSample == null) {
             LOG.warn("SpawnSelector: no valid coarse spawn found; defaulting to origin");
             return SpawnPoint.create(world.getRegistryKey(), BlockPos.ORIGIN, 0.0F, 0.0F);
         }
 
         // Refine the coarse tile to find a safe spawn position.
-        BlockPos safeSpawnPos = findSafeSpawn(world, coarseTile);
+        final BlockPos safeSpawnPos = findSafeSpawn(world, coarseSample);
 
         return SpawnPoint.create(world.getRegistryKey(), safeSpawnPos, 0.0F, 0.0F);
     }
 
-    private static TileSample calculateCoarseSpawnChunk() {
+    private static CoarseSample calculateCoarseSpawnChunk() {
         final int half = COARSE_GRID_SIZE / 2;
-        final TileSample tile = new TileSample();
+        final int sampleSpacing = COARSE_GRID_SPACING + 1;
+        final int ciMin = -half * sampleSpacing;
+        final int cjMin = -half * sampleSpacing;
+        final int ciMaxExclusive = (half + 1) * sampleSpacing;
+        final int cjMaxExclusive = (half + 1) * sampleSpacing;
 
         try {
             LOG.debug("SpawnSelector: starting coarse sampling for Overworld");
+            final FloatTensor coarseSlice = LocalTerrainProvider.getPipelineCoarse(ciMin, cjMin, ciMaxExclusive, cjMaxExclusive);
 
             // Expand in square "rings" around (0, 0) in grid coordinates.
             // r is the ring radius in grid coordinates.
             for (int r = 0; r <= half; r++) {
                 for (int x = -r; x <= r; x++) {
-                    if (sampleTile(x, -r, tile)) {
-                        return tile;
+                    // Top edge
+                    final CoarseSample topSample = sampleTile(coarseSlice, x, -r, sampleSpacing, ciMin, cjMin);
+                    if (topSample != null) {
+                        return topSample;
                     }
-                    if (r != 0 && sampleTile(x, r, tile)) {
-                        return tile;
+                    // Bottom edge
+                    if (r != 0) {
+                        final CoarseSample bottomSample = sampleTile(coarseSlice, x, r, sampleSpacing, ciMin, cjMin);
+                        if (bottomSample != null) {
+                            return bottomSample;
+                        }
                     }
                 }
                 if (r > 0) {
                     for (int z = -r + 1; z <= r - 1; z++) {
-                        if (sampleTile(-r, z, tile)) {
-                            return tile;
+                        // Left edge
+                        final CoarseSample leftSample = sampleTile(coarseSlice, -r, z, sampleSpacing, ciMin, cjMin);
+                        if (leftSample != null) {
+                            return leftSample;
                         }
-                        if (sampleTile(r, z, tile)) {
-                            return tile;
+                        // Right edge
+                        final CoarseSample rightSample = sampleTile(coarseSlice, r, z, sampleSpacing, ciMin, cjMin);
+                        if (rightSample != null) {
+                            return rightSample;
                         }
                     }
                 }
@@ -79,8 +94,8 @@ public final class SpawnSelector {
             LOG.error("SpawnSelector: unexpected error", e);
         }
 
-        // No valid spawn found; return an invalid sample.
-        return tile;
+        // No valid spawn found.
+        return null;
     }
 
     /**
@@ -88,65 +103,66 @@ public final class SpawnSelector {
      *
      * @param gridX grid coordinate in sample space (centred around 0)
      * @param gridZ grid coordinate in sample space (centred around 0)
-     * @param best  mutable accumulator for the best sample found so far
+     * @param sampleSpacing spacing between samples in grid coordinates
+     * @param ciMin minimum grid coordinate in sample space (inclusive)
+     * @param cjMin minimum grid coordinate in sample space (inclusive)
+     * @return a coarse sample when this tile is valid, otherwise null
      */
-    private static boolean sampleTile(int gridX, int gridZ, TileSample tile) {
-        final int sampleSpacing = COARSE_GRID_SPACING + 1;
+        private static CoarseSample sampleTile(
+            FloatTensor coarseSlice,
+            int gridX,
+            int gridZ,
+            int sampleSpacing,
+            int ciMin,
+            int cjMin) {
         final int ci = gridX * sampleSpacing;
         final int cj = gridZ * sampleSpacing;
 
-        try {
-            final FloatTensor slice = LocalTerrainProvider.getPipelineCoarse(ci, cj, ci + 1, cj + 1);
+        final int sampleI = ci - ciMin;
+        final int sampleJ = cj - cjMin;
+        final int sliceHeight = coarseSlice.shape[1];
+        final int sliceWidth = coarseSlice.shape[2];
 
-            final float weight = slice.data[6];
-            if (weight <= MIN_VALID_WEIGHT) {
-                return false;
-            }
-
-            // channel 0 = elev
-            final float raw = slice.data[0] / weight;
-
-            // Elevation scoring: sign(raw) * raw^2
-            final float elev = Math.copySign(raw * raw, raw);
-
-            LOG.debug("SpawnSelector: coarse sample at ({}, {}) has raw={} elev={} (w={})", ci, cj, raw, elev, weight);
-
-            // Pick first option above sea level
-            if (elev > 0) {
-                LOG.debug("SpawnSelector: coarse sample found ({}, {}) elev={} (w={})", ci, cj, elev, weight);
-                tile.elev = elev;
-                tile.ci = ci;
-                tile.cj = cj;
-                return true;
-            }
-        } catch (Exception e) {
-            LOG.warn("SpawnSelector: coarse sample failed for ({}, {})", ci, cj, e);
+        if (sampleI < 0 || sampleJ < 0 || sampleI >= sliceHeight || sampleJ >= sliceWidth) {
+            LOG.warn("SpawnSelector: coarse sample index out of bounds for ({}, {})", ci, cj);
+            return null;
         }
 
-        return false;
+        final int pixel = sampleI * sliceWidth + sampleJ;
+        final int planeSize = sliceHeight * sliceWidth;
+        final float weight = coarseSlice.data[6 * planeSize + pixel];
+        if (weight <= MIN_VALID_WEIGHT) {
+            return null;
+        }
+
+        // channel 0 = elev
+        final float raw = coarseSlice.data[pixel] / weight;
+
+        // Elevation scoring: sign(raw) * raw^2
+        final float elev = Math.copySign(raw * raw, raw);
+
+        LOG.debug("SpawnSelector: coarse sample at ({}, {}) has raw={} elev={} (w={})", ci, cj, raw, elev, weight);
+
+        // Pick first option above sea level
+        if (elev > 0) {
+            LOG.debug("SpawnSelector: coarse sample found ({}, {}) elev={} (w={})", ci, cj, elev, weight);
+            return new CoarseSample(ci, cj);
+        }
+
+        return null;
     }
 
-    /**
-     * Mutable object for blocks
-     */
-    private static final class TileSample {
-        float elev = Float.POSITIVE_INFINITY;
-        int ci = 0;
-        int cj = 0;
-
-        boolean hasSample() {
-            return elev != Float.POSITIVE_INFINITY;
-        }
+    private record CoarseSample(int ci, int cj) {
     }
 
     /**
      * Refine a coarse tile sample by checking multiple nearby chunks for a safe spawn point.
      *
      * @param world the server world to check for spawn safety
-     * @param tile  the coarse tile sample to refine
+     * @param coarseSample the coarse tile sample to refine
      * @return a safe spawn position within the tile, or a fallback position if none found
      */
-    private static BlockPos findSafeSpawn(ServerWorld world, TileSample tile) {
+    private static BlockPos findSafeSpawn(ServerWorld world, CoarseSample coarseSample) {
         // Convert coarse tile center to block coordinates.
         final int scale = WorldScaleManager.getCurrentScale();
         final int coarseTileBlockSize = 256 * scale;
@@ -156,8 +172,8 @@ public final class SpawnSelector {
         final int chunksToCheck = Math.min(TILE_GRID_SIZE, chunksPerTile);
 
         // Corner of the coarse tile in block coordinates
-        final int tileX = tile.cj * coarseTileBlockSize;
-        final int tileZ = tile.ci * coarseTileBlockSize;
+        final int tileX = coarseSample.cj() * coarseTileBlockSize;
+        final int tileZ = coarseSample.ci() * coarseTileBlockSize;
         final int tileChunkX = tileX / 16;
         final int tileChunkZ = tileZ / 16;
         final int chunkStride = chunksPerTile / chunksToCheck;
