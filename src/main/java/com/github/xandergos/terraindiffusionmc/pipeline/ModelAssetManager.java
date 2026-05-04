@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Ensures model assets exist locally and match the expected SHA-256 hashes.
  *
- * <p>Assets are downloaded from a pinned Hugging Face commit into the game directory:
+ * <p>Assets are downloaded from a pinned Hugging Face commit into the game directory :
  * {@code .minecraft/terrain-diffusion-models}.
  */
 public final class ModelAssetManager {

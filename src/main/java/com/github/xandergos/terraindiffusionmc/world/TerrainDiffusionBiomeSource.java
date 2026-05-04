@@ -4,7 +4,6 @@ import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.HeightmapData;
 import com.mojang.datafixers.util.Pair;
-import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
@@ -39,7 +38,6 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
                     RegistryOps.getEntryLookupCodec(RegistryKeys.BIOME)
             ).apply(instance, instance.stable(TerrainDiffusionBiomeSource::new)));
 
-
     private RegistryEntryLookup<Biome> biomeLookup;
     private Map<Short, RegistryEntry<Biome>> biomeIdMap = null;
 
@@ -59,6 +57,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
                     entry((short) 3, this.biomeLookup.getOrThrow(BiomeKeys.SNOWY_PLAINS)),
                     entry((short) 5, this.biomeLookup.getOrThrow(BiomeKeys.DESERT)),
                     entry((short) 6, this.biomeLookup.getOrThrow(BiomeKeys.SWAMP)),
+                    entry((short) 7, this.biomeLookup.getOrThrow(BiomeKeys.RIVER)),
                     entry((short) 8, this.biomeLookup.getOrThrow(BiomeKeys.FOREST)),
                     entry((short) 15, this.biomeLookup.getOrThrow(BiomeKeys.TAIGA)),
                     entry((short) 16, this.biomeLookup.getOrThrow(BiomeKeys.SNOWY_TAIGA)),
@@ -93,7 +92,6 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         requireBiomeIdMap();
         RegistryEntry<Biome> defaultEntry = biomeIdMap.get((short) 1);
 
-        // x, y, z are in quart coordinates (block / 4)
         int blockX = BiomeCoords.toBlock(x);
         int blockZ = BiomeCoords.toBlock(z);
 
@@ -112,7 +110,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         if (data != null && data.biomeIds != null) {
             int localX = Math.max(0, Math.min(data.width  - 1, blockX - blockStartX));
             int localZ = Math.max(0, Math.min(data.height - 1, blockZ - blockStartZ));
-            RegistryEntry<Biome> entry = biomeIdMap.get(data.biomeIds[localZ][localX]);
+            RegistryEntry<Biome> entry = biomeIdMap.get(data.biomeAt(localZ, localX));
             if (entry != null) return entry;
         }
 
@@ -129,4 +127,3 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         return null;
     }
 }
-

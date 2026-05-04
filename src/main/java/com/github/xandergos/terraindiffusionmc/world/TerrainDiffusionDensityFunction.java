@@ -42,7 +42,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
         int localX = Math.max(0, Math.min(data.width  - 1, x - blockStartX));
         int localZ = Math.max(0, Math.min(data.height - 1, z - blockStartZ));
 
-        int targetHeight = HeightConverter.convertToMinecraftHeight(data.heightmap[localZ][localX]);
+        int targetHeight = HeightConverter.convertToMinecraftHeight(data.heightAt(localZ, localX));
         return targetHeight - y;
     }
 
@@ -100,7 +100,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
             int localZ = Math.max(0, Math.min(data.height - 1, z - ctx.blockStartZ));
 
             int targetHeight = HeightConverter
-                .convertToMinecraftHeight(data.heightmap[localZ][localX]);
+                .convertToMinecraftHeight(data.heightAt(localZ, localX));
             densities[i] = targetHeight - y;
         }
     }

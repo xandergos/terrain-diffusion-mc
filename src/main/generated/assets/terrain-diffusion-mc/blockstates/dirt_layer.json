@@ -1,0 +1,88 @@
+{
+  "variants": {
+    "layers=1,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer1"
+    },
+    "layers=1,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer1"
+    },
+    "layers=1,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer1_snowy"
+    },
+    "layers=1,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer1_snowy"
+    },
+    "layers=2,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer2"
+    },
+    "layers=2,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer2"
+    },
+    "layers=2,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer2_snowy"
+    },
+    "layers=2,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer2_snowy"
+    },
+    "layers=3,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer3"
+    },
+    "layers=3,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer3"
+    },
+    "layers=3,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer3_snowy"
+    },
+    "layers=3,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer3_snowy"
+    },
+    "layers=4,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer4"
+    },
+    "layers=4,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer4"
+    },
+    "layers=4,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer4_snowy"
+    },
+    "layers=4,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer4_snowy"
+    },
+    "layers=5,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer5"
+    },
+    "layers=5,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer5"
+    },
+    "layers=5,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer5_snowy"
+    },
+    "layers=5,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer5_snowy"
+    },
+    "layers=6,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer6"
+    },
+    "layers=6,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer6"
+    },
+    "layers=6,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer6_snowy"
+    },
+    "layers=6,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer6_snowy"
+    },
+    "layers=7,snowy=false,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer7"
+    },
+    "layers=7,snowy=false,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer7"
+    },
+    "layers=7,snowy=true,waterlogged=false": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer7_snowy"
+    },
+    "layers=7,snowy=true,waterlogged=true": {
+      "model": "terrain-diffusion-mc:block/dirt_layer/layer7_snowy"
+    }
+  }
+}

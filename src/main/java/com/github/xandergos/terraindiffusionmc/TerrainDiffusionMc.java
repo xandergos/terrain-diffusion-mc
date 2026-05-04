@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc;
 
+import com.github.xandergos.terraindiffusionmc.block.ModBlocks;
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
@@ -33,6 +34,11 @@ public class TerrainDiffusionMc implements ModInitializer {
     @Override
     public void onInitialize() {
         LOG.info("Initializing terrain-diffusion-mc");
+
+        // Must run during mod initialization before the registries are frozen.
+        // River material placement uses these custom layered blocks during world generation.
+        ModBlocks.register();
+
         Registry.register(Registries.BIOME_SOURCE, Identifier.of(MOD_ID, "terrain_diffusion"), TerrainDiffusionBiomeSource.CODEC);
         Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "terrain_diffusion"), TerrainDiffusionDensityFunction.CODEC);
 

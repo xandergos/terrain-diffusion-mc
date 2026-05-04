@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "terrain-diffusion-mc:calcite_layer"
+        }
+      ],
+      "rolls": 1
+    }
+  ]
+}
