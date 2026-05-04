@@ -45,9 +45,6 @@ import org.jetbrains.annotations.Nullable;
  * <p>An optional {@link #SNOWY} flag adds a thin snow layer on top, mirroring the
  * snowy variant of vanilla grass blocks. The flag is updated by {@link #randomTick}
  * to track weather and may also be set by world generation.
- *
- * @author https://github.com/ThatDamnWittyWhizHard
- * @owner @ThatDamnWittyWhizHard
  */
 public class LayeredBlock extends Block implements Waterloggable {
 

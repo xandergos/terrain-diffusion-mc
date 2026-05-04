@@ -13,6 +13,10 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.util.Identifier;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import static com.github.xandergos.terraindiffusionmc.TerrainDiffusionMc.MOD_ID;
 
 /**
@@ -29,11 +33,24 @@ import static com.github.xandergos.terraindiffusionmc.TerrainDiffusionMc.MOD_ID;
  *
  * <p>Call {@link #register()} from {@code onInitialize} to trigger static class loading
  * and populate the registry.
- *
- * @author https://github.com/ThatDamnWittyWhizHard
- * @owner @ThatDamnWittyWhizHard
  */
 public final class ModBlocks {
+
+    private static final List<LayeredBlockInfo> LAYERED_BLOCKS = new ArrayList<>();
+
+    /**
+     * Metadata for registered layer blocks. Datagen reads this list so block registration
+     * remains the single source of truth for layer assets and loot tables.
+     */
+    public record LayeredBlockInfo(String name, LayeredBlock block, Block fullBlock) {
+        public Identifier blockId() {
+            return Identifier.of(MOD_ID, name + "_layer");
+        }
+    }
+
+    public static List<LayeredBlockInfo> getLayeredBlocks() {
+        return Collections.unmodifiableList(LAYERED_BLOCKS);
+    }
 
     /** Thin-to-full sand layers ; common in river beds and shallow shores. */
     public static final FallingLayeredBlock SAND_LAYER = registerFallingLayered("sand", Blocks.SAND, copyOf(Blocks.SAND));
@@ -68,6 +85,9 @@ public final class ModBlocks {
     /** Thin-to-full calcite layers ; karst and limestone riverbed outcrops. */
     public static final LayeredBlock CALCITE_LAYER = registerLayered("calcite", Blocks.CALCITE, copyOf(Blocks.CALCITE));
 
+    /** Thin-to-full mud layers ; swamp or mangrove. */
+    public static final LayeredBlock MUD_LAYER = registerLayered("mud", Blocks.MUD, copyOf(Blocks.MUD));
+
     /**
      * Creates a {@link LayeredBlock}, registers it under
      * {@code terrain-diffusion-mc:<name>_layer} and wires its vanilla full-cube
@@ -81,6 +101,7 @@ public final class ModBlocks {
                 blockKey,
                 new LayeredBlock(settings.registryKey(blockKey)));
         block.setFullBlock(fullBlock);
+        LAYERED_BLOCKS.add(new LayeredBlockInfo(name, block, fullBlock));
         Registry.register(
                 Registries.ITEM,
                 itemKey,
@@ -97,6 +118,7 @@ public final class ModBlocks {
                 blockKey,
                 new FallingLayeredBlock(settings.registryKey(blockKey)));
         block.setFullBlock(fullBlock);
+        LAYERED_BLOCKS.add(new LayeredBlockInfo(name, block, fullBlock));
         Registry.register(
                 Registries.ITEM,
                 itemKey,
@@ -117,17 +139,9 @@ public final class ModBlocks {
      */
     public static void register() {
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.NATURAL).register(entries -> {
-            entries.addBefore(Blocks.DIRT,         DIRT_LAYER);
-            entries.addBefore(Blocks.COARSE_DIRT,  COARSE_DIRT_LAYER);
-            entries.addBefore(Blocks.GRAVEL,       GRAVEL_LAYER);
-            entries.addBefore(Blocks.SAND,         SAND_LAYER);
-            entries.addBefore(Blocks.RED_SAND,     RED_SAND_LAYER);
-            entries.addBefore(Blocks.CLAY,         CLAY_LAYER);
-            entries.addBefore(Blocks.STONE,        STONE_LAYER);
-            entries.addBefore(Blocks.GRANITE,      GRANITE_LAYER);
-            entries.addBefore(Blocks.DIORITE,      DIORITE_LAYER);
-            entries.addBefore(Blocks.ANDESITE,     ANDESITE_LAYER);
-            entries.addBefore(Blocks.CALCITE,      CALCITE_LAYER);
+            for (LayeredBlockInfo layer : LAYERED_BLOCKS) {
+                entries.addBefore(layer.fullBlock(), layer.block());
+            }
         });
     }
 

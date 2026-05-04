@@ -1,0 +1,14 @@
+{
+  "type": "minecraft:block",
+  "pools": [
+    {
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "terrain-diffusion-mc:clay_layer"
+        }
+      ],
+      "rolls": 1
+    }
+  ]
+}

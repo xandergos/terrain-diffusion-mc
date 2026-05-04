@@ -19,9 +19,6 @@ import net.minecraft.world.tick.ScheduledTickView;
  * <p>When unsupported the block schedules a tick and then spawns a {@link FallingBlockEntity}
  * carrying the current {@code layers} state. Falling behavior is identical to a regular
  * falling block ; only the geometry differs.
- *
- * @author https://github.com/ThatDamnWittyWhizHard
- * @owner @ThatDamnWittyWhizHard
  */
 public class FallingLayeredBlock extends LayeredBlock {
 
