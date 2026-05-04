@@ -4,6 +4,8 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.PriorityQueue;
 
+import com.github.xandergos.terraindiffusionmc.world.RiverCellClass;
+
 /**
  * Local, mass-conserving river extraction and centerline-based carving.
  *
@@ -20,15 +22,15 @@ import java.util.PriorityQueue;
 public final class MassFluxRiverCarver {
     public static final short RIVER_BIOME_ID = 7;
 
-    public static final byte RIVER_NONE = 0;
+    public static final byte RIVER_NONE = RiverCellClass.NONE;
     /** Carved bank or floodplain shoulder. No standing water is placed here. */
-    public static final byte RIVER_BANK = 1;
+    public static final byte RIVER_BANK = RiverCellClass.BANK;
     /** Very small rill/stream. Rendered as a narrow waterlogged sediment layer ; not full water blocks. */
-    public static final byte RIVER_TINY_STREAM = 2;
+    public static final byte RIVER_TINY_STREAM = RiverCellClass.TINY_STREAM;
     /** Small stream. Rendered primarily as a waterlogged bed layer. */
-    public static final byte RIVER_SMALL_STREAM = 3;
+    public static final byte RIVER_SMALL_STREAM = RiverCellClass.SMALL_STREAM;
     /** Normal river. Rendered with waterlogged bed sediment plus full water above it. */
-    public static final byte RIVER_FULL_RIVER = 4;
+    public static final byte RIVER_FULL_RIVER = RiverCellClass.FULL_RIVER;
 
     /** Keep this equal to the padding used by LocalTerrainProvider. */
     public static final int ANALYSIS_PADDING_BLOCKS = 48;
@@ -95,7 +97,7 @@ public final class MassFluxRiverCarver {
      * @param targetC0 left column of the target window inside routingElev
      * @param targetH target window height
      * @param targetW target window width
-     * @param pixelSizeM horizontal size represented by one grid cell, in metres
+     * @param pixelSizeM horizontal size represented by one grid cell in metres
      */
     public static Result carveTarget(
             float[] routingElev,
@@ -115,20 +117,22 @@ public final class MassFluxRiverCarver {
         }
 
         float[] hydroSurface = boxBlur(routingElev, routingH, routingW, 2);
-        hydroSurface = priorityFloodEpsilon(hydroSurface, routingH, routingW, pixelSizeM);
+        FloodResult flood = priorityFloodEpsilon(hydroSurface, routingH, routingW, pixelSizeM);
+        hydroSurface = flood.filled();
 
-        Integer[] order = sortedHighToLow(hydroSurface);
+        int[] lowToHigh = flood.lowToHigh();
+        int[] highToLow = reverse(lowToHigh);
         int[] primaryDown = computePrimaryDownstream(hydroSurface, routingElev, routingH, routingW, pixelSizeM);
-        float[] massAreaCells = accumulateMassFlux(hydroSurface, routingElev, routingH, routingW, order);
-        float[] d8AreaCells = accumulateD8(primaryDown, routingElev, routingH, routingW, order);
+        float[] massAreaCells = accumulateMassFlux(hydroSurface, routingElev, routingH, routingW, highToLow);
+        float[] d8AreaCells = accumulateD8(primaryDown, routingElev, routingH, routingW, highToLow);
         boolean[] centerline = extractCenterline(primaryDown, hydroSurface, routingElev, massAreaCells, d8AreaCells,
                 routingH, routingW, pixelSizeM);
-        float[] shreve = computeShreveMagnitude(primaryDown, centerline, order);
+        float[] shreve = computeShreveMagnitude(primaryDown, centerline, highToLow);
 
         float[] carved = crop(routingElev, routingH, routingW, targetR0, targetC0, targetH, targetW);
         byte[] riverCells = new byte[targetH * targetW];
         carvePolylineChannels(routingElev, hydroSurface, primaryDown, centerline, massAreaCells, d8AreaCells, shreve,
-                routingH, routingW, targetR0, targetC0, targetH, targetW, pixelSizeM, carved, riverCells);
+                lowToHigh, routingH, routingW, targetR0, targetC0, targetH, targetW, pixelSizeM, carved, riverCells);
 
         float[] targetArea = crop(massAreaCells, routingH, routingW, targetR0, targetC0, targetH, targetW);
         return new Result(carved, riverCells, targetArea);
@@ -143,11 +147,12 @@ public final class MassFluxRiverCarver {
         }
     }
 
-    private static Integer[] sortedHighToLow(float[] hydro) {
-        Integer[] order = new Integer[hydro.length];
-        for (int i = 0; i < hydro.length; i++) order[i] = i;
-        Arrays.sort(order, Comparator.comparingDouble((Integer idx) -> hydro[idx]).reversed());
-        return order;
+    private static int[] reverse(int[] order) {
+        int[] reversed = new int[order.length];
+        for (int i = 0, j = order.length - 1; i < order.length; i++, j--) {
+            reversed[i] = order[j];
+        }
+        return reversed;
     }
 
     private static int[] computePrimaryDownstream(float[] hydro, float[] originalElev, int H, int W, float pixelSizeM) {
@@ -178,7 +183,7 @@ public final class MassFluxRiverCarver {
         return down;
     }
 
-    private static float[] accumulateD8(int[] primaryDown, float[] originalElev, int H, int W, Integer[] order) {
+    private static float[] accumulateD8(int[] primaryDown, float[] originalElev, int H, int W, int[] order) {
         int n = H * W;
         float[] accum = new float[n];
         for (int i = 0; i < n; i++) {
@@ -193,7 +198,7 @@ public final class MassFluxRiverCarver {
         return accum;
     }
 
-    private static float[] accumulateMassFlux(float[] hydro, float[] originalElev, int H, int W, Integer[] order) {
+    private static float[] accumulateMassFlux(float[] hydro, float[] originalElev, int H, int W, int[] order) {
         int n = H * W;
         float[] accum = new float[n];
         for (int i = 0; i < n; i++) {
@@ -287,7 +292,7 @@ public final class MassFluxRiverCarver {
         return out;
     }
 
-    private static float[] computeShreveMagnitude(int[] primaryDown, boolean[] centerline, Integer[] order) {
+    private static float[] computeShreveMagnitude(int[] primaryDown, boolean[] centerline, int[] order) {
         float[] shreve = new float[centerline.length];
         for (int idx : order) {
             if (!centerline[idx]) continue;
@@ -308,6 +313,7 @@ public final class MassFluxRiverCarver {
             float[] massArea,
             float[] d8Area,
             float[] shreve,
+            int[] lowToHigh,
             int routingH,
             int routingW,
             int targetR0,
@@ -320,7 +326,7 @@ public final class MassFluxRiverCarver {
     ) {
         float minDropM = pixelSizeM * MIN_DROP_BLOCKS;
         float[] bed = buildMonotoneBed(routingElev, primaryDown, centerline, massArea, d8Area, shreve,
-                routingH, routingW, pixelSizeM, minDropM);
+                lowToHigh, routingH, routingW, pixelSizeM, minDropM);
 
         int rMin = Math.max(1, targetR0 - ANALYSIS_PADDING_BLOCKS);
         int cMin = Math.max(1, targetC0 - ANALYSIS_PADDING_BLOCKS);
@@ -351,6 +357,7 @@ public final class MassFluxRiverCarver {
             float[] massArea,
             float[] d8Area,
             float[] shreve,
+            int[] lowToHigh,
             int H,
             int W,
             float pixelSizeM,
@@ -364,10 +371,6 @@ public final class MassFluxRiverCarver {
             ChannelShape shape = shapeAt(idx, routingElev, massArea, d8Area, shreve, pixelSizeM);
             bed[idx] = routingElev[idx] - shape.depthM;
         }
-
-        Integer[] lowToHigh = new Integer[n];
-        for (int i = 0; i < n; i++) lowToHigh[i] = i;
-        Arrays.sort(lowToHigh, Comparator.comparingDouble((Integer idx) -> routingElev[idx]));
 
         // Reduce stair-step artifacts : upstream beds should not be lower than their downstream parent.
         for (int pass = 0; pass < 2; pass++) {
@@ -571,9 +574,13 @@ public final class MassFluxRiverCarver {
 
     private record ChannelShape(float waterRadiusCells, float bankRadiusCells, float depthM, byte waterClass) {}
 
-    private static float[] priorityFloodEpsilon(float[] elev, int H, int W, float pixelSizeM) {
+    private record FloodResult(float[] filled, int[] lowToHigh) {}
+
+    private static FloodResult priorityFloodEpsilon(float[] elev, int H, int W, float pixelSizeM) {
         float[] filled = elev.clone();
         boolean[] seen = new boolean[H * W];
+        int[] lowToHigh = new int[H * W];
+        int orderSize = 0;
         float eps = Math.max(0.005f, pixelSizeM * 0.0002f);
         PriorityQueue<Node> pq = new PriorityQueue<>(Comparator.comparingDouble(n -> n.z));
 
@@ -588,6 +595,7 @@ public final class MassFluxRiverCarver {
 
         while (!pq.isEmpty()) {
             Node node = pq.poll();
+            lowToHigh[orderSize++] = node.idx;
             int r = node.idx / W;
             int c = node.idx - r * W;
             for (int k = 0; k < 8; k++) {
@@ -603,7 +611,10 @@ public final class MassFluxRiverCarver {
                 pq.add(new Node(ni, filled[ni]));
             }
         }
-        return filled;
+        if (orderSize != lowToHigh.length) {
+            lowToHigh = Arrays.copyOf(lowToHigh, orderSize);
+        }
+        return new FloodResult(filled, lowToHigh);
     }
 
     private static void pushBoundary(int r, int c, int W, float[] filled, boolean[] seen, PriorityQueue<Node> pq) {

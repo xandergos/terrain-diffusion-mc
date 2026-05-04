@@ -5,9 +5,11 @@ import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Comparator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -43,33 +45,68 @@ public final class LocalTerrainProvider {
     }
 
     public static final class HeightmapData {
-        public final short[][] heightmap;
-        public final short[][] biomeIds;
+        public final short[] heightmap;
+        public final short[] biomeIds;
         /** Optional river render-class grid : 0 none, 1 bank, 2 tiny stream, 3 small stream or 4 full river. */
-        public final byte[][] riverCells;
+        public final byte[] riverCells;
         public final int width;
         public final int height;
 
-        public HeightmapData(short[][] heightmap, short[][] biomeIds, int width, int height) {
+        public HeightmapData(short[] heightmap, short[] biomeIds, int width, int height) {
             this(heightmap, biomeIds, null, width, height);
         }
 
-        public HeightmapData(short[][] heightmap, short[][] biomeIds, byte[][] riverCells, int width, int height) {
+        public HeightmapData(short[] heightmap, short[] biomeIds, byte[] riverCells, int width, int height) {
+            int expected = width * height;
+            if (heightmap != null && heightmap.length < expected) {
+                throw new IllegalArgumentException("heightmap is smaller than width * height");
+            }
+            if (biomeIds != null && biomeIds.length < expected) {
+                throw new IllegalArgumentException("biomeIds is smaller than width * height");
+            }
+            if (riverCells != null && riverCells.length < expected) {
+                throw new IllegalArgumentException("riverCells is smaller than width * height");
+            }
             this.heightmap  = heightmap;
             this.biomeIds   = biomeIds;
             this.riverCells = riverCells;
             this.width      = width;
             this.height     = height;
         }
+
+        public int index(int z, int x) {
+            return z * width + x;
+        }
+
+        public short heightAt(int z, int x) {
+            return heightmap[index(z, x)];
+        }
+
+        public short biomeAt(int z, int x) {
+            return biomeIds[index(z, x)];
+        }
+
+        public byte riverAt(int z, int x) {
+            return riverCells[index(z, x)];
+        }
+
+        public long estimatedBytes() {
+            return 96L
+                    + (heightmap == null ? 0L : (long) heightmap.length * Short.BYTES)
+                    + (biomeIds == null ? 0L : (long) biomeIds.length * Short.BYTES)
+                    + (riverCells == null ? 0L : riverCells.length);
+        }
     }
 
     private static record CacheKey(int i1, int j1, int i2, int j2) {}
-    private static record CacheEntry(HeightmapData data, AtomicLong lastAccessed) {}
+    private static record CacheEntry(HeightmapData data, AtomicLong lastAccessed, long bytes) {}
 
-    private static final int MAX_CACHE_SIZE = 64;
-    private static final int MAX_CACHE_SIZE_HEADROOM = 8;
+    private static final long MAX_CACHE_BYTES = Long.getLong(
+            "terrainDiffusion.cache.maxBytes", 128L * 1024L * 1024L);
+    private static final long CACHE_EVICTION_HEADROOM_BYTES = Math.max(16L * 1024L * 1024L, MAX_CACHE_BYTES / 8L);
     private static final Map<CacheKey, CacheEntry> CACHE = new ConcurrentHashMap<>();
     private static final AtomicLong CACHE_CLOCK = new AtomicLong();
+    private static final AtomicLong CACHE_BYTES = new AtomicLong();
     private static final Map<CacheKey, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
     /** Single thread for pipeline.get() so MemoryTileStore is not accessed concurrently. */
     private static final ExecutorService INFERENCE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
@@ -100,8 +137,7 @@ public final class LocalTerrainProvider {
         } else if (instanceSeed != seed) {
             INSTANCE.pipeline.setSeed(seed);
             instanceSeed = seed;
-            CACHE.clear();
-            PENDING.clear();
+            clearCache();
         }
     }
 
@@ -123,6 +159,7 @@ public final class LocalTerrainProvider {
     public static void clearCache() {
         CACHE.clear();
         PENDING.clear();
+        CACHE_BYTES.set(0L);
     }
 
     /**
@@ -149,7 +186,7 @@ public final class LocalTerrainProvider {
         try {
             HeightmapData data = pending.get();
             if (data != null) {
-                CACHE.put(key, new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet())));
+                putCache(key, data);
             }
             return data;
         } catch (Exception ignored) {
@@ -194,8 +231,7 @@ public final class LocalTerrainProvider {
             LocalTerrainProvider provider = getInstance();
             provider.pipeline.setSeed(newSeed);
             instanceSeed = newSeed;
-            CACHE.clear();
-            PENDING.clear();
+            clearCache();
             return null;
         });
     }
@@ -243,8 +279,7 @@ public final class LocalTerrainProvider {
             LOG.info(
                     "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
                     OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
-            CACHE.put(key, new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet())));
-            evictLruTo(MAX_CACHE_SIZE);
+            putCache(key, data);
             PENDING.remove(key);
             return data;
         });
@@ -266,14 +301,28 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private static void evictLruTo(int maxSize) {
-        int headroomHalf = MAX_CACHE_SIZE_HEADROOM / 2;
-        if (CACHE.size() > maxSize + headroomHalf) {
-            CACHE.entrySet().stream()
-                .sorted(Comparator.comparingLong(e -> e.getValue().lastAccessed.get()))
-                .limit(MAX_CACHE_SIZE_HEADROOM)
-                .map(Map.Entry::getKey)
-                .forEach(CACHE::remove);
+    private static void putCache(CacheKey key, HeightmapData data) {
+        if (data == null) return;
+        long bytes = data.estimatedBytes();
+        CacheEntry entry = new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet()), bytes);
+        CacheEntry previous = CACHE.put(key, entry);
+        long delta = bytes - (previous == null ? 0L : previous.bytes());
+        CACHE_BYTES.addAndGet(delta);
+        evictLruToBytes(MAX_CACHE_BYTES);
+    }
+
+    private static void evictLruToBytes(long maxBytes) {
+        if (CACHE_BYTES.get() <= maxBytes) return;
+
+        long targetBytes = Math.max(0L, maxBytes - CACHE_EVICTION_HEADROOM_BYTES);
+        List<Map.Entry<CacheKey, CacheEntry>> entries = new ArrayList<>(CACHE.entrySet());
+        entries.sort(Comparator.comparingLong(e -> e.getValue().lastAccessed.get()));
+
+        for (Map.Entry<CacheKey, CacheEntry> entry : entries) {
+            if (CACHE_BYTES.get() <= targetBytes) break;
+            if (CACHE.remove(entry.getKey(), entry.getValue())) {
+                CACHE_BYTES.addAndGet(-entry.getValue().bytes());
+            }
         }
     }
 
@@ -284,13 +333,15 @@ public final class LocalTerrainProvider {
     private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
         int H = i2 - i1, W = j2 - j1;
 
-        float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
         float[][] out = pipeline.get(i1, j1, i2, j2, true);
         float[] elevFlat = out[0];
         float[] climate  = out[1];
 
         int riverPad = MassFluxRiverCarver.ANALYSIS_PADDING_BLOCKS;
+        int routingH = H + 2 * riverPad;
+        int routingW = W + 2 * riverPad;
         float[] routingElev = pipeline.get(i1 - riverPad, j1 - riverPad, i2 + riverPad, j2 + riverPad, false)[0];
+        float[] elevPadded = cropFlat(routingElev, routingH, routingW, riverPad - 1, riverPad - 1, H + 2, W + 2);
         MassFluxRiverCarver.Result river = MassFluxRiverCarver.carveTarget(
                 routingElev, H + 2 * riverPad, W + 2 * riverPad, riverPad, riverPad, H, W, NATIVE_RESOLUTION);
 
@@ -426,6 +477,18 @@ public final class LocalTerrainProvider {
         return result;
     }
 
+    private static float[] cropFlat(float[] src, int srcH, int srcW, int r0, int c0, int H, int W) {
+        float[] out = new float[H * W];
+        for (int r = 0; r < H; r++) {
+            int sr = Math.max(0, Math.min(srcH - 1, r0 + r));
+            for (int c = 0; c < W; c++) {
+                int sc = Math.max(0, Math.min(srcW - 1, c0 + c));
+                out[r * W + c] = src[sr * srcW + sc];
+            }
+        }
+        return out;
+    }
+
     private static float[] cropFlat(float[][] src, int r0, int c0, int H, int W, int srcH, int srcW) {
         float[] out = new float[H * W];
         for (int r = 0; r < H; r++) {
@@ -443,17 +506,15 @@ public final class LocalTerrainProvider {
     }
 
     private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, byte[] riverFlat, int H, int W) {
-        short[][] heightmap = new short[H][W];
-        short[][] biomeIds  = new short[H][W];
-        byte[][] riverCells = riverFlat == null ? null : new byte[H][W];
-        for (int r = 0; r < H; r++)
-            for (int c = 0; c < W; c++) {
-                int idx = r * W + c;
-                float e = elevFlat[idx];
-                heightmap[r][c] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
-                biomeIds[r][c]  = biomeFlat[idx];
-                if (riverCells != null) riverCells[r][c] = riverFlat[idx];
-            }
+        int n = H * W;
+        short[] heightmap = new short[n];
+        short[] biomeIds  = new short[n];
+        byte[] riverCells = riverFlat == null ? null : riverFlat.clone();
+        for (int idx = 0; idx < n; idx++) {
+            float e = elevFlat[idx];
+            heightmap[idx] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
+            biomeIds[idx]  = biomeFlat[idx];
+        }
         return new HeightmapData(heightmap, biomeIds, riverCells, W, H);
     }
 }

@@ -110,7 +110,7 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         if (data != null && data.biomeIds != null) {
             int localX = Math.max(0, Math.min(data.width  - 1, blockX - blockStartX));
             int localZ = Math.max(0, Math.min(data.height - 1, blockZ - blockStartZ));
-            RegistryEntry<Biome> entry = biomeIdMap.get(data.biomeIds[localZ][localX]);
+            RegistryEntry<Biome> entry = biomeIdMap.get(data.biomeAt(localZ, localX));
             if (entry != null) return entry;
         }
 
