@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.debug.TerrainDebugStats;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
@@ -258,6 +259,7 @@ public final class LocalTerrainProvider {
         CacheEntry cached = CACHE.get(key);
         if (cached != null) {
             cached.lastAccessed.set(CACHE_CLOCK.incrementAndGet());
+            TerrainDebugStats.recordCacheHit();
             return cached.data;
         }
 
@@ -266,37 +268,61 @@ public final class LocalTerrainProvider {
 
     private HeightmapData genHeightmap(CacheKey key, int i1, int j1, int i2, int j2) {
         int scale = WorldScaleManager.getCurrentScale();
+        String debugKey = "(" + j1 + "," + i1 + ")-(" + j2 + "," + i2 + ")";
         FutureTask<HeightmapData> task = new FutureTask<>(() -> {
+            long startNs = System.nanoTime();
+            TerrainDebugStats.recordInferenceStart(debugKey, PENDING.size());
             long computedWindowCountBefore = pipeline.getTotalComputedWindowCount();
-            HeightmapData data = scale <= 1
-                    ? handle1x(i1, j1, i2, j2)
-                    : handleUpsampled(i1, j1, i2, j2, scale);
-            long computedWindowCountAfter = pipeline.getTotalComputedWindowCount();
-
-            long newlyComputedWindowCount = computedWindowCountAfter - computedWindowCountBefore;
-            int regionWidth = j2 - j1;
-            int regionHeight = i2 - i1;
-            LOG.info(
-                    "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
-                    OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
-            putCache(key, data);
-            PENDING.remove(key);
-            return data;
+            try {
+                HeightmapData data = scale <= 1
+                        ? handle1x(i1, j1, i2, j2)
+                        : handleUpsampled(i1, j1, i2, j2, scale);
+                long computedWindowCountAfter = pipeline.getTotalComputedWindowCount();
+                long newlyComputedWindowCount = computedWindowCountAfter - computedWindowCountBefore;
+                long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+                int regionWidth = j2 - j1;
+                int regionHeight = i2 - i1;
+                LOG.info(
+                        "Terrain Diffusion ({}) finished generating region {}x{} in {} ms ({} newly computed windows, pending={})",
+                        OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, elapsedMs,
+                        newlyComputedWindowCount, PENDING.size());
+                if (elapsedMs > 10_000L || PENDING.size() > 8) {
+                    LOG.warn(
+                            "Terrain Diffusion generation pressure: last tile {} ms, pending={}, cache={} MB, region={}",
+                            elapsedMs, PENDING.size(), CACHE_BYTES.get() / 1048576L, debugKey);
+                }
+                putCache(key, data);
+                TerrainDebugStats.recordInferenceSuccess(elapsedMs, newlyComputedWindowCount, CACHE_BYTES.get(), Math.max(0L, PENDING.size() - 1L));
+                return data;
+            } catch (Throwable t) {
+                long elapsedMs = (System.nanoTime() - startNs) / 1_000_000L;
+                TerrainDebugStats.recordInferenceFailure(elapsedMs, t, Math.max(0L, PENDING.size() - 1L));
+                LOG.error("Terrain Diffusion tile failed after {} ms for {}", elapsedMs, debugKey, t);
+                if (t instanceof Exception) throw (Exception) t;
+                if (t instanceof Error) throw (Error) t;
+                throw new RuntimeException(t);
+            } finally {
+                PENDING.remove(key);
+            }
         });
         Future<HeightmapData> existing = PENDING.putIfAbsent(key, task);
-        FutureTask<HeightmapData> toRun = (existing == null) ? task : (FutureTask<HeightmapData>) existing;
+        Future<HeightmapData> toRun = (existing == null) ? task : existing;
         if (existing == null) {
             int regionWidth = j2 - j1;
             int regionHeight = i2 - i1;
+            TerrainDebugStats.recordCacheMissQueued(debugKey, PENDING.size());
             LOG.info(
-                    "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{}",
-                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight);
-            INFERENCE_EXECUTOR.submit(toRun);
+                    "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{} pending={}",
+                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight, PENDING.size());
+            INFERENCE_EXECUTOR.submit(task);
+        } else {
+            TerrainDebugStats.recordPendingWait(debugKey, PENDING.size());
         }
         try {
             return toRun.get();
         } catch (Exception e) {
             PENDING.remove(key);
+            LOG.error("Terrain Diffusion tile wait failed for {}", debugKey, e);
             throw new RuntimeException("Terrain tile failed: " + key, e);
         }
     }

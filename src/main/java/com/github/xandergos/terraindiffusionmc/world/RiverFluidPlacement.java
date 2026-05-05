@@ -2,6 +2,7 @@ package com.github.xandergos.terraindiffusionmc.world;
 
 import com.github.xandergos.terraindiffusionmc.block.LayeredBlock;
 import com.github.xandergos.terraindiffusionmc.block.ModBlocks;
+import com.github.xandergos.terraindiffusionmc.debug.TerrainDebugStats;
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.HeightmapData;
@@ -56,9 +57,11 @@ public final class RiverFluidPlacement {
 
         HeightmapData data = LocalTerrainProvider.getReadyHeightmap(tileStartZ, tileStartX, tileEndZ, tileEndX);
         if (data == null || data.heightmap == null || data.biomeIds == null || data.riverCells == null) {
+            TerrainDebugStats.recordRiverPlacementSkipped();
             return;
         }
 
+        int touchedColumns = 0;
         int minY = world.getBottomY();
         int maxY = world.getBottomY() + world.getHeight() - 1;
         BlockPos.Mutable pos = new BlockPos.Mutable();
@@ -94,8 +97,10 @@ public final class RiverFluidPlacement {
                 } else {
                     placeMinorStream(world, chunk, data, pos, worldX, surfaceY, worldZ, localZ, localX, riverClass, minY, maxY);
                 }
+                touchedColumns++;
             }
         }
+        TerrainDebugStats.recordRiverPlacementDone(touchedColumns);
     }
 
     private static void placeMinorStream(

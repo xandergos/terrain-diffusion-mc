@@ -4,6 +4,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.PriorityQueue;
 
+import com.github.xandergos.terraindiffusionmc.debug.TerrainDebugStats;
 import com.github.xandergos.terraindiffusionmc.world.RiverCellClass;
 
 /**
@@ -109,10 +110,12 @@ public final class MassFluxRiverCarver {
             int targetW,
             float pixelSizeM
     ) {
+        long startNs = System.nanoTime();
         if (routingElev == null || routingElev.length != routingH * routingW) {
             throw new IllegalArgumentException("routingElev size does not match routingH * routingW");
         }
         if (targetH <= 0 || targetW <= 0) {
+            TerrainDebugStats.recordRiverCarve(0L, 0, 0, 0f);
             return new Result(new float[0], new byte[0], new float[0]);
         }
 
@@ -135,6 +138,17 @@ public final class MassFluxRiverCarver {
                 lowToHigh, routingH, routingW, targetR0, targetC0, targetH, targetW, pixelSizeM, carved, riverCells);
 
         float[] targetArea = crop(massAreaCells, routingH, routingW, targetR0, targetC0, targetH, targetW);
+        int waterCells = 0;
+        int bankCells = 0;
+        float maxArea = 0f;
+        for (byte cell : riverCells) {
+            if (cell == RIVER_BANK) bankCells++;
+            else if (cell >= RIVER_TINY_STREAM) waterCells++;
+        }
+        for (float area : targetArea) {
+            if (area > maxArea) maxArea = area;
+        }
+        TerrainDebugStats.recordRiverCarve((System.nanoTime() - startNs) / 1_000_000L, waterCells, bankCells, maxArea);
         return new Result(carved, riverCells, targetArea);
     }
 
