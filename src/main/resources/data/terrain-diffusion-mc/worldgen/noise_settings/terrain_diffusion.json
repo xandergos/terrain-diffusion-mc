@@ -34,9 +34,7 @@
         "argument2": {
           "type": "minecraft:mul",
           "argument1": -0.5,
-          "argument2": {
-            "type": "terrain-diffusion-mc:terrain_diffusion"
-          }
+          "argument2": "terrain-diffusion-mc:terrain_diffusion"
         }
       },
       "min": -1.0,
@@ -50,19 +48,13 @@
     "erosion": 0,
     "depth": 0,
     "ridges": 0,
-    "initial_density_without_jaggedness": {
-      "type": "terrain-diffusion-mc:terrain_diffusion"
-    },
+    "initial_density_without_jaggedness": "terrain-diffusion-mc:terrain_diffusion",
     "final_density": {
       "type": "minecraft:add",
-      "argument1": {
-        "type": "terrain-diffusion-mc:terrain_diffusion"
-      },
+      "argument1": "terrain-diffusion-mc:terrain_diffusion",
       "argument2": {
         "type": "minecraft:range_choice",
-        "input": {
-          "type": "terrain-diffusion-mc:terrain_diffusion"
-        },
+        "input": "terrain-diffusion-mc:terrain_diffusion",
         "min_inclusive": 4.0,
         "max_exclusive": 1000000.0,
         "when_in_range": {

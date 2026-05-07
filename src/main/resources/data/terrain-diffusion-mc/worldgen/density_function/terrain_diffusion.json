@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:cache_once",
+  "argument": {
+    "type": "terrain-diffusion-mc:terrain_diffusion"
+  }
+}

@@ -16,11 +16,45 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
     private static final int TILE_SIZE  = TerrainDiffusionConfig.tileSize();
     private static final int TILE_SHIFT = Integer.numberOfTrailingZeros(TILE_SIZE);
 
+    /**
+     * Per-thread single-entry cache: last (blockX, blockZ) -> targetHeight.
+     *
+     * <p>The chunk-gen pipeline samples densities in column-major order, so consecutive
+     * compute() calls share (x, z) and only differ in y. Caching the last lookup catches
+     * those (and the back-to-back calls vanilla aquifer makes for preliminarySurfaceLevel
+     * iteration: 250+ Y samples per column on the first hit).
+     *
+     * <p>cache_once at the JSON layer covers the chunk-gen MarkerContext path. This
+     * ThreadLocal covers the SinglePointContext path used by the aquifer and surface-level
+     * iteration, which doesn't carry a marker counter and therefore bypasses cache_once.
+     *
+     * <p>{@code static} so all parsed instances share the per-thread cache (the codec is
+     * MapCodec.unit, so the named density function and any inline reference produce
+     * separate instances; without static state each would have its own cache).
+     */
+    /**
+     * Sentinel for the unset cache slot. Long.MIN_VALUE+1 corresponds to
+     * (x=Integer.MIN_VALUE+1, z=1) — far outside any reachable world coord.
+     */
+    private static final long NO_KEY = Long.MIN_VALUE + 1;
+
+    private static final ThreadLocal<long[]> LAST_LOOKUP = ThreadLocal.withInitial(() -> {
+        long[] arr = new long[2];
+        arr[0] = NO_KEY;
+        return arr;
+    });
+
     @Override
     public double compute(DensityFunction.FunctionContext context) {
         int x = context.blockX();
         int z = context.blockZ();
         int y = context.blockY();
+
+        long key = ((long) x << 32) | (z & 0xFFFFFFFFL);
+        long[] cache = LAST_LOOKUP.get();
+        if (cache[0] == key) {
+            return cache[1] - y;
+        }
 
         int tileX = x >> TILE_SHIFT;
         int tileZ = z >> TILE_SHIFT;
@@ -39,6 +73,8 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
         int localZ = Math.max(0, Math.min(data.height - 1, z - blockStartZ));
 
         int targetHeight = HeightConverter.convertToMinecraftHeight(data.heightmap[localZ][localX]);
+        cache[0] = key;
+        cache[1] = targetHeight;
         return targetHeight - y;
     }
 

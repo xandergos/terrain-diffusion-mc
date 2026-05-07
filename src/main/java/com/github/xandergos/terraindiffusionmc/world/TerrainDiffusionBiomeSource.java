@@ -98,6 +98,23 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
     private static final int TILE_SIZE  = TerrainDiffusionConfig.tileSize();
     private static final int TILE_SHIFT = Integer.numberOfTrailingZeros(TILE_SIZE);
 
+    /**
+     * Per-thread single-entry cache: last surface biome lookup keyed by (blockX, blockZ).
+     *
+     * <p>The biome registry samples per quart-Y for every (x, z) column — typically 200+
+     * Y levels per chunk per column. The surface biome itself is column-only (no Y
+     * dependency once cave biomes are dispatched), so all those calls return the same
+     * entry. Caching the last result skips the heightmap fetch + biomeIdMap lookup for
+     * every Y after the first.
+     */
+    private static final ThreadLocal<SurfaceBiomeCache> SURFACE_BIOME_CACHE =
+            ThreadLocal.withInitial(SurfaceBiomeCache::new);
+
+    private static final class SurfaceBiomeCache {
+        long key = Long.MIN_VALUE + 1;
+        Holder<Biome> value;
+    }
+
     public static final MapCodec<TerrainDiffusionBiomeSource> CODEC = RecordCodecBuilder.mapCodec((instance) ->
             instance.group(
                     RegistryOps.retrieveGetter(Registries.BIOME)
@@ -242,6 +259,15 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
             }
         }
 
+        // Surface biome cache: same column, same biome regardless of Y. The chunk-gen
+        // loop calls this method for every Y quart in the column, so a single-entry
+        // cache absorbs ~200+ calls per column.
+        long colKey = ((long) blockX << 32) | (blockZ & 0xFFFFFFFFL);
+        SurfaceBiomeCache cache = SURFACE_BIOME_CACHE.get();
+        if (cache.key == colKey) {
+            return cache.value;
+        }
+
         int tileX = blockX >> TILE_SHIFT;
         int tileZ = blockZ >> TILE_SHIFT;
 
@@ -251,14 +277,17 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         int blockEndZ = blockStartZ + TILE_SIZE;
 
         HeightmapData data = LocalTerrainProvider.getInstance().fetchHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX);
+        Holder<Biome> result = defaultEntry;
         if (data != null && data.biomeIds != null) {
             int localX = Math.max(0, Math.min(data.width  - 1, blockX - blockStartX));
             int localZ = Math.max(0, Math.min(data.height - 1, blockZ - blockStartZ));
             Holder<Biome> entry = biomeIdMap.get(data.biomeIds[localZ][localX]);
-            if (entry != null) return entry;
+            if (entry != null) result = entry;
         }
 
-        return defaultEntry;
+        cache.key = colKey;
+        cache.value = result;
+        return result;
     }
 
     @Override

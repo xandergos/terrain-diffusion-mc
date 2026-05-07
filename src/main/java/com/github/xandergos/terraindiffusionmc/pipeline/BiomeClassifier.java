@@ -102,23 +102,44 @@ public final class BiomeClassifier {
     public static short classifyCaveBiome(int blockX, int blockY, int blockZ) {
         if (blockY > 30) return -1;
 
+        // Per-thread (x, z) cache: chunk-gen iterates this method for every Y
+        // quart in [-64, 30] = ~24 calls per column with identical (x, z). One
+        // cache entry catches the trailing 23 to skip both noise samples.
+        long key = ((long) blockX << 32) | (blockZ & 0xFFFFFFFFL);
+        long[] kArr = CAVE_NOISE_KEY.get();
+        float[] vArr = CAVE_NOISE_VALUES.get();
+        float dd, cb;
+        if (kArr[0] == key) {
+            dd = vArr[0];
+            cb = vArr[1];
+        } else {
+            dd = DEEP_DARK_NOISE.GetNoise((float) blockX, (float) blockZ);
+            cb = CAVE_BIOME_NOISE.GetNoise((float) blockX, (float) blockZ);
+            kArr[0] = key;
+            vArr[0] = dd;
+            vArr[1] = cb;
+        }
+
         // Deep dark: rare patches restricted to low Y. Threshold tuned against
         // CaveBiomeNoiseTest output — DEEP_DARK_NOISE rarely exceeds 0.4, so
-        // 0.18 gives roughly 8-10% of the area below Y=0.
-        if (blockY < 0) {
-            float dd = DEEP_DARK_NOISE.GetNoise((float) blockX, (float) blockZ);
-            if (dd > 0.28f) return DEEP_DARK;
-        }
+        // 0.28 gives roughly 5-8% of the area below Y=0.
+        if (blockY < 0 && dd > 0.28f) return DEEP_DARK;
 
         // Lush vs dripstone: smooth blobs. CAVE_BIOME_NOISE concentrates near 0
         // so a ±0.10 split gives roughly 25% lush + 25% dripstone + 50% surface
         // biome (verified via CaveBiomeNoiseTest).
-        float cb = CAVE_BIOME_NOISE.GetNoise((float) blockX, (float) blockZ);
         if (cb >  0.10f) return LUSH_CAVES;
         if (cb < -0.10f) return DRIPSTONE_CAVES;
 
         return -1;
     }
+
+    // Per-thread cache state for classifyCaveBiome. Static so all biome-source
+    // instances share one cache per thread.
+    private static final ThreadLocal<long[]> CAVE_NOISE_KEY =
+            ThreadLocal.withInitial(() -> new long[]{Long.MIN_VALUE + 1});
+    private static final ThreadLocal<float[]> CAVE_NOISE_VALUES =
+            ThreadLocal.withInitial(() -> new float[2]);
 
     /**
      * Classify biomes for a grid of pixels.
