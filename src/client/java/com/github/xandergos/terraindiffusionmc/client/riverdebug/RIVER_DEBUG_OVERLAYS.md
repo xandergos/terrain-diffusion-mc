@@ -246,7 +246,7 @@ Une cellule devient rivière si :
 flowAccumulation >= River threshold
 ```
 
-Le seuil est réglable dans le menu F8 via **River threshold**. Plus le seuil est bas plus tu verras de petits affluents. Plus il est haut plus seules les rivières principales restent visibles.
+Le seuil est réglable dans le menu F8 via **River threshold**. Plus le seuil est bas plus on verra de petits affluents. Plus il est haut plus seules les rivières principales restent visibles.
 
 Cette étape reste raster. Elle sert à valider le réseau hydrologique avant la vectorisation en polylignes.
 
@@ -282,7 +282,7 @@ Affiche uniquement les sources raster.
 | Vert | Début d'un tronçon rivière selon le seuil courant |
 | Rien | Pas une source |
 
-Attention : une source raster n'est pas forcément une vraie source hydrologique. Si tu baisses le seuil, la source remonte vers l'amont. Si tu montes le seuil, elle descend vers l'aval. Normal.
+Attention : une source raster n'est pas forcément une vraie source hydrologique. Si on baisse le seuil la source remonte vers l'amont. Si on montes le seuil elle descend vers l'aval. Normal.
 
 ### Confluences
 
@@ -332,7 +332,7 @@ Un terminal bleu sur le bord du radius renderer est normal. C'est une limite de 
 12. Vérifier que les collecteurs suivent les vallées.
 13. Activer **Accumulation : Sinks/depressions**.
 14. Vérifier les cuvettes internes.
-15. Activer **Accumulation : Window outlets** si tu veux vérifier où l'eau quitte la fenêtre debug.
+15. Activer **Accumulation : Window outlets** si on veut vérifier où l'eau quitte la fenêtre debug.
 16. Activer **Rivers : River cells**.
 17. Ajuster **River threshold** jusqu'à obtenir un réseau lisible.
 18. Activer **Rivers : Classified**.
