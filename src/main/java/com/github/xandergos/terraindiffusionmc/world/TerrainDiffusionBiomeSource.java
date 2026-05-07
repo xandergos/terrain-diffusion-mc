@@ -1,6 +1,7 @@
 package com.github.xandergos.terraindiffusionmc.world;
 
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
+import com.github.xandergos.terraindiffusionmc.pipeline.BiomeClassifier;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider.HeightmapData;
 import com.mojang.datafixers.util.Pair;
@@ -136,6 +137,10 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         map.put((short) 108, biomeLookup.getOrThrow(FOREST_SPARSE));
         map.put((short) 115, biomeLookup.getOrThrow(TAIGA_SPARSE));
         map.put((short) 116, biomeLookup.getOrThrow(SNOWY_TAIGA_SPARSE));
+        // Cave biomes
+        map.put((short)  60, biomeLookup.getOrThrow(Biomes.LUSH_CAVES));
+        map.put((short)  61, biomeLookup.getOrThrow(Biomes.DRIPSTONE_CAVES));
+        map.put((short)  62, biomeLookup.getOrThrow(Biomes.DEEP_DARK));
         // BWG biomes – fall back to nearest vanilla equivalent if mod is not loaded
         map.put((short) 200, bwgOrFallback(biomeLookup, BWG_ALLIUM_SHRUBLAND,          Biomes.PLAINS));
         map.put((short) 201, bwgOrFallback(biomeLookup, BWG_AMARANTH_GRASSLAND,        Biomes.DESERT));
@@ -223,7 +228,19 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
 
         // x, y, z are in quart coordinates (block / 4)
         int blockX = QuartPos.toBlock(x);
+        int blockY = QuartPos.toBlock(y);
         int blockZ = QuartPos.toBlock(z);
+
+        // Cave biome dispatch: only consider it for the underground band. The
+        // classifier itself short-circuits above Y=30, but we also skip the
+        // lookup entirely for high Y to avoid the noise call hot path.
+        if (blockY <= 30) {
+            short caveBiomeId = BiomeClassifier.classifyCaveBiome(blockX, blockY, blockZ);
+            if (caveBiomeId >= 0) {
+                Holder<Biome> caveBiome = biomeIdMap.get(caveBiomeId);
+                if (caveBiome != null) return caveBiome;
+            }
+        }
 
         int tileX = blockX >> TILE_SHIFT;
         int tileZ = blockZ >> TILE_SHIFT;
