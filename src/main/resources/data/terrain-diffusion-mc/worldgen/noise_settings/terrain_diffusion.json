@@ -20,25 +20,26 @@
     "size_vertical": 2
   },
   "noise_router": {
-    "barrier": 0,
-    "fluid_level_floodedness": 0,
-    "fluid_level_spread": 0,
-    "lava": 0,
-    "temperature": 0,
-    "vegetation": 0,
-    "continents": 0,
-    "erosion": 0,
-    "depth": 0,
-    "ridges": 0,
+    "vein_gap": "minecraft:overworld/noise_router/vein_gap",
+    "vein_ridged": "minecraft:overworld/noise_router/vein_ridged",
+    "vein_toggle": "minecraft:overworld/noise_router/vein_toggle",
+    "ridges": "minecraft:overworld/noise_router/ridges",
+    "depth": "minecraft:overworld/noise_router/depth",
+    "erosion": "minecraft:overworld/noise_router/erosion",
+    "continents": "minecraft:overworld/noise_router/continents",
+    "vegetation": "minecraft:overworld/noise_router/vegetation",
+    "temperature": "minecraft:overworld/noise_router/temperature",
+    "lava": "minecraft:overworld/noise_router/lava",
+    "fluid_level_spread": "minecraft:overworld/noise_router/fluid_level_spread",
+    "fluid_level_floodedness": "minecraft:overworld/noise_router/fluid_level_floodedness",
+    "barrier": "minecraft:overworld/noise_router/barrier",
+
     "preliminary_surface_level": {
       "type": "terrain-diffusion-mc:terrain_diffusion"
     },
     "final_density": {
       "type": "terrain-diffusion-mc:terrain_diffusion"
-    },
-    "vein_toggle": 0,
-    "vein_ridged": 0,
-    "vein_gap": 0
+    }
   },
   "spawn_target": [],
   "surface_rule": {

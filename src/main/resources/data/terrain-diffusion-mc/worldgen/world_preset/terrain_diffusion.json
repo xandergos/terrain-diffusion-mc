@@ -6,7 +6,8 @@
         "type": "minecraft:noise",
         "settings": "terrain-diffusion-mc:terrain_diffusion",
         "biome_source": {
-          "type": "terrain-diffusion-mc:terrain_diffusion"
+          "type": "minecraft:multi_noise",
+          "preset": "minecraft:overworld"
         }
       }
     },
