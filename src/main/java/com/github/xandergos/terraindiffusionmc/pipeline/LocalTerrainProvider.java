@@ -297,27 +297,17 @@ public final class LocalTerrainProvider {
 
     private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
         int H = i2 - i1, W = j2 - j1;
-        int pW = W + 2, pH = H + 2;
 
-        // Single pipeline call with 1-pixel padding; avoids running Laplacian+climate twice.
-        float[][] out = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, true);
-        float[] elevPadded = out[0]; // (H+2)*(W+2)
-
-        // Crop inner H*W elevation from padded result.
-        float[] elevFlat = new float[H * W];
-        for (int r = 0; r < H; r++)
-            System.arraycopy(elevPadded, (r + 1) * pW + 1, elevFlat, r * W, W);
-
-        // Crop inner 5*H*W climate from padded 5*(H+2)*(W+2) result.
-        float[] climate = null;
-        float[] climatePadded = out[1];
-        if (climatePadded != null) {
-            climate = new float[5 * H * W];
-            for (int ch = 0; ch < 5; ch++)
-                for (int r = 0; r < H; r++)
-                    System.arraycopy(climatePadded, ch * pH * pW + (r + 1) * pW + 1,
-                                     climate, ch * H * W + r * W, W);
-        }
+        // Two pipeline calls — matches upstream behaviour. The previous single-call
+        // refactor (efficient: read padded once and crop) produced subtly different
+        // per-pixel elev values at shorelines because the pipeline's Laplacian-decode
+        // step depends on the requested region's padding context. Using two separate
+        // calls (one padded, one un-padded) restores upstream-identical elev values
+        // for the inner region, which is what gets fed to the density function.
+        float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
+        float[][] out = pipeline.get(i1, j1, i2, j2, true);
+        float[] elevFlat = out[0];
+        float[] climate  = out[1];
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
         return buildHeightmapData(elevFlat, biomeFlat, H, W);
@@ -458,12 +448,13 @@ public final class LocalTerrainProvider {
     private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, int H, int W) {
         short[][] heightmap = new short[H][W];
         short[][] biomeIds  = new short[H][W];
-        for (int r = 0; r < H; r++)
+        for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
                 float e = elevFlat[r * W + c];
                 heightmap[r][c] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
                 biomeIds[r][c]  = biomeFlat[r * W + c];
             }
+        }
         return new HeightmapData(heightmap, biomeIds, W, H);
     }
 }

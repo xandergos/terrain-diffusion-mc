@@ -1,7 +1,7 @@
 {
   "sea_level": 63,
   "disable_mob_generation": false,
-  "aquifers_enabled": true,
+  "aquifers_enabled": false,
   "ore_veins_enabled": false,
   "legacy_random_source": false,
   "default_block": {
@@ -20,26 +20,8 @@
     "size_vertical": 2
   },
   "noise_router": {
-    "barrier": {
-      "type": "minecraft:noise",
-      "noise": "minecraft:aquifer_barrier",
-      "xz_scale": 1.0,
-      "y_scale": 0.5
-    },
-    "fluid_level_floodedness": {
-      "type": "minecraft:clamp",
-      "input": {
-        "type": "minecraft:add",
-        "argument1": 4.0,
-        "argument2": {
-          "type": "minecraft:mul",
-          "argument1": -0.5,
-          "argument2": "terrain-diffusion-mc:terrain_diffusion"
-        }
-      },
-      "min": -1.0,
-      "max": 1.0
-    },
+    "barrier": 0,
+    "fluid_level_floodedness": 0,
     "fluid_level_spread": 0,
     "lava": 0,
     "temperature": 0,
@@ -48,27 +30,8 @@
     "erosion": 0,
     "depth": 0,
     "ridges": 0,
-    "initial_density_without_jaggedness": "terrain-diffusion-mc:terrain_diffusion",
-    "final_density": {
-      "type": "minecraft:add",
-      "argument1": "terrain-diffusion-mc:terrain_diffusion",
-      "argument2": {
-        "type": "minecraft:range_choice",
-        "input": "terrain-diffusion-mc:terrain_diffusion",
-        "min_inclusive": 4.0,
-        "max_exclusive": 1000000.0,
-        "when_in_range": {
-          "type": "minecraft:min",
-          "argument1": 0,
-          "argument2": {
-            "type": "minecraft:mul",
-            "argument1": 64.0,
-            "argument2": "minecraft:overworld/caves/entrances"
-          }
-        },
-        "when_out_of_range": 0
-      }
-    },
+    "initial_density_without_jaggedness": 0,
+    "final_density": "terrain-diffusion-mc:terrain_diffusion",
     "vein_toggle": 0,
     "vein_ridged": 0,
     "vein_gap": 0

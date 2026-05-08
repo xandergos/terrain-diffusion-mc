@@ -38,6 +38,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
      */
     private static final long NO_KEY = Long.MIN_VALUE + 1;
 
+
     private static final ThreadLocal<long[]> LAST_LOOKUP = ThreadLocal.withInitial(() -> {
         long[] arr = new long[2];
         arr[0] = NO_KEY;
@@ -73,6 +74,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
         int localZ = Math.max(0, Math.min(data.height - 1, z - blockStartZ));
 
         int targetHeight = HeightConverter.convertToMinecraftHeight(data.heightmap[localZ][localX]);
+
         cache[0] = key;
         cache[1] = targetHeight;
         return targetHeight - y;
