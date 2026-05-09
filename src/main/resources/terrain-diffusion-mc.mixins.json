@@ -4,7 +4,8 @@
   "package": "com.github.xandergos.terraindiffusionmc.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "BiomeMixin"
+    "BiomeMixin",
+    "MinecraftServerMixin"
   ],
   "injectors": {
     "defaultRequire": 1

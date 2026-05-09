@@ -53,6 +53,16 @@ public final class TerrainDiffusionConfig {
         return readBoolean("validate_model", DEFAULT_VALIDATE_MODEL);
     }
 
+    /** Initial coarse-pixel radius for spawn land search (NxN region centered at origin). */
+    public static int spawnSearchInitialSize() {
+        return readInt("spawn_search.initial_size", 16);
+    }
+
+    /** Maximum coarse-pixel region size for spawn land search before giving up. */
+    public static int spawnSearchMaxSize() {
+        return readInt("spawn_search.max_size", 128);
+    }
+
     /** Region side length in blocks. Must be a positive power of 2 (128, 256, 512, ...). */
     public static int tileSize() {
         int configuredTileSize = readInt("tile_size", DEFAULT_TILE_SIZE);
