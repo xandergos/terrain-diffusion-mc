@@ -94,7 +94,7 @@
       "input": "minecraft:overworld/depth",
       "argument1": "minecraft:overworld/depth",
       "argument2": {
-        "type": "terrain-diffusion-mc:pipeline_noise_depth",
+        "type": "terrain-diffusion-mc:noise_depth",
         "channel": "DEPTH"
       }
     },
@@ -104,7 +104,7 @@
       "input": "minecraft:overworld/depth",
       "argument1": "minecraft:overworld/erosion",
       "argument2": {
-        "type": "terrain-diffusion-mc:pipeline_noise_erosion",
+        "type": "terrain-diffusion-mc:noise_erosion",
         "channel": "EROSION"
       }
     },
@@ -114,7 +114,7 @@
       "input": 0.7,
       "argument1": "minecraft:overworld/continents",
       "argument2": {
-        "type": "terrain-diffusion-mc:pipeline_noise_continents",
+        "type": "terrain-diffusion-mc:noise_continents",
         "channel": "CONTINENTS"
       }
     },
@@ -132,7 +132,7 @@
         "y_scale": 0.0
       },
       "argument2": {
-        "type": "terrain-diffusion-mc:pipeline_noise_vegetation",
+        "type": "terrain-diffusion-mc:noise_vegetation",
         "channel": "VEGETATION"
       }
     },
@@ -150,7 +150,7 @@
         "y_scale": 0.0
       },
       "argument2": {
-        "type": "terrain-diffusion-mc:pipeline_noise_temperature",
+        "type": "terrain-diffusion-mc:noise_temperature",
         "channel": "TEMPERATURE"
       }
     },
