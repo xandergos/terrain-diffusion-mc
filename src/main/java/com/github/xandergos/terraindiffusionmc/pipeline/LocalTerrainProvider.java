@@ -5,8 +5,6 @@ import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.Comparator;
@@ -44,15 +42,34 @@ public final class LocalTerrainProvider {
         return fnl;
     }
 
+    public static class NoiseChannels {
+        public float[][] erosion;
+        public float[][] continents;
+        public float[][] temperature;
+        public float[][] vegetation;
+        public float[][] depth;
+
+        public float erosion(int x, int z) { return erosion[z][x]; }
+        public float continents(int x, int z) { return continents[z][x]; }
+        public float temperature(int x, int z) { return temperature[z][x]; }
+        public float vegetation(int x, int z) { return vegetation[z][x]; }
+        public float depth(int x, int z) { return depth[z][x]; }
+    }
+
     public static final class HeightmapData {
         public final short[][] heightmap;
         public final short[][] biomeIds;
         public final int width;
         public final int height;
 
-        public HeightmapData(short[][] heightmap, short[][] biomeIds, int width, int height) {
+        public NoiseChannels noiseChannels;
+
+        public HeightmapData(short[][] heightmap, short[][] biomeIds, float[] climateFlat, int width, int height) {
             this.heightmap = heightmap;
             this.biomeIds  = biomeIds;
+            noiseChannels = climateFlat == null
+                    ? null
+                    : getInstance().buildNoiseChannels(climateFlat, width, height);
             this.width     = width;
             this.height    = height;
         }
@@ -253,7 +270,7 @@ public final class LocalTerrainProvider {
         float[] climate  = out[1];
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
-        return buildHeightmapData(elevFlat, biomeFlat, H, W);
+        return buildHeightmapData(elevFlat, climate, biomeFlat, H, W);
     }
 
     // =========================================================================
@@ -299,7 +316,7 @@ public final class LocalTerrainProvider {
         float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
 
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
-        return buildHeightmapData(elevOut, biomeFlat, H, W);
+        return buildHeightmapData(elevOut, climate, biomeFlat, H, W);
     }
 
     // =========================================================================
@@ -385,7 +402,71 @@ public final class LocalTerrainProvider {
         return a;
     }
 
-    private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, int H, int W) {
+    private NoiseChannels buildNoiseChannels(float[] climateFlat, int H, int W) {
+        NoiseChannels nc = new NoiseChannels();
+
+        nc.erosion = new float[H][W];
+        nc.continents = new float[H][W];
+        nc.temperature = new float[H][W];
+        nc.vegetation = new float[H][W];
+        nc.depth = new float[H][W];
+
+        int total = H * W;
+
+        if (climateFlat == null || climateFlat.length == 0) {
+            return nc;
+        }
+
+        // CASE A: full 5-channel packed tensor
+        if (climateFlat.length >= total * 5) {
+            for (int i = 0; i < total; i++) {
+                nc.erosion[i / W][i % W]     = climateFlat[i];
+                nc.continents[i / W][i % W]  = climateFlat[i + total];
+                nc.temperature[i / W][i % W] = climateFlat[i + 2 * total];
+                nc.vegetation[i / W][i % W]  = climateFlat[i + 3 * total];
+                nc.depth[i / W][i % W]       = climateFlat[i + 4 * total];
+            }
+            return nc;
+        }
+
+        // CASE B: single-channel climate (most likely your 262144 case)
+        if (climateFlat.length == total) {
+            for (int i = 0; i < total; i++) {
+                float v = climateFlat[i];
+
+                nc.erosion[i / W][i % W]     = v;
+                nc.continents[i / W][i % W]  = v * 0.73f + 0.11f;
+                nc.temperature[i / W][i % W] = v * 0.51f - 0.07f;
+                nc.vegetation[i / W][i % W]  = v * 0.29f + 0.23f;
+                nc.depth[i / W][i % W]       = v * 0.18f - 0.31f;
+            }
+            return nc;
+        }
+
+        // CASE C: partial/misaligned tensor → attempt best-effort reshape
+        if (climateFlat.length % total == 0) {
+            int stride = climateFlat.length / total;
+
+            for (int i = 0; i < total; i++) {
+                int base = i * stride;
+
+                nc.temperature[i / W][i % W] = climateFlat[base];
+                if (stride > 1) nc.continents[i / W][i % W] = climateFlat[base + 1];
+                if (stride > 2) nc.vegetation[i / W][i % W] = climateFlat[base + 2];
+                if (stride > 3) nc.depth[i / W][i % W]      = climateFlat[base + 3];
+                if (stride > 4) nc.erosion[i / W][i % W]    = climateFlat[base + 4];
+            }
+
+            return nc;
+        }
+
+        throw new IllegalStateException(
+                "Unrecognized climate format: " + climateFlat.length +
+                        " for grid " + total
+        );
+    }
+
+    private static HeightmapData buildHeightmapData(float[] elevFlat, float[] climateFlat, short[] biomeFlat, int H, int W) {
         short[][] heightmap = new short[H][W];
         short[][] biomeIds  = new short[H][W];
         for (int r = 0; r < H; r++)
@@ -394,6 +475,6 @@ public final class LocalTerrainProvider {
                 heightmap[r][c] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
                 biomeIds[r][c]  = biomeFlat[r * W + c];
             }
-        return new HeightmapData(heightmap, biomeIds, W, H);
+        return new HeightmapData(heightmap, biomeIds, climateFlat, W, H);
     }
 }

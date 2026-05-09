@@ -35,6 +35,12 @@ public class TerrainDiffusionMc implements ModInitializer {
         Registry.register(Registries.BIOME_SOURCE, Identifier.of(MOD_ID, "terrain_diffusion"), TerrainDiffusionBiomeSource.CODEC);
         Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "terrain_diffusion"), TerrainDiffusionDensityFunction.CODEC);
 
+        Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "noise_erosion"), PipelineNoiseFunction.codec(PipelineNoiseFunction.NoiseChannel.EROSION));
+        Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "noise_continents"), PipelineNoiseFunction.codec(PipelineNoiseFunction.NoiseChannel.CONTINENTS));
+        Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "noise_depth"), PipelineNoiseFunction.codec(PipelineNoiseFunction.NoiseChannel.DEPTH));
+        Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "noise_vegetation"), PipelineNoiseFunction.codec(PipelineNoiseFunction.NoiseChannel.VEGETATION));
+        Registry.register(Registries.DENSITY_FUNCTION_TYPE, Identifier.of(MOD_ID, "noise_temperature"), PipelineNoiseFunction.codec(PipelineNoiseFunction.NoiseChannel.TEMPERATURE));
+
         ModelAssetManager.ensureAssetsReady();
         PipelineModels.load();
 

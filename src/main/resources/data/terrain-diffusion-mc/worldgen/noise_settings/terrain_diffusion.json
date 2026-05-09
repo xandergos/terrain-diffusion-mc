@@ -20,20 +20,164 @@
     "size_vertical": 2
   },
   "noise_router": {
-    "vein_gap": "minecraft:overworld/noise_router/vein_gap",
-    "vein_ridged": "minecraft:overworld/noise_router/vein_ridged",
-    "vein_toggle": "minecraft:overworld/noise_router/vein_toggle",
-    "ridges": "minecraft:overworld/noise_router/ridges",
-    "depth": "minecraft:overworld/noise_router/depth",
-    "erosion": "minecraft:overworld/noise_router/erosion",
-    "continents": "minecraft:overworld/noise_router/continents",
-    "vegetation": "minecraft:overworld/noise_router/vegetation",
-    "temperature": "minecraft:overworld/noise_router/temperature",
-    "lava": "minecraft:overworld/noise_router/lava",
-    "fluid_level_spread": "minecraft:overworld/noise_router/fluid_level_spread",
-    "fluid_level_floodedness": "minecraft:overworld/noise_router/fluid_level_floodedness",
-    "barrier": "minecraft:overworld/noise_router/barrier",
-
+    "vein_gap": {
+      "type": "minecraft:noise",
+      "noise": "minecraft:ore_gap",
+      "xz_scale": 1.0,
+      "y_scale": 1.0
+    },
+    "vein_ridged": {
+      "type": "minecraft:add",
+      "argument1": -0.07999999821186066,
+      "argument2": {
+        "type": "minecraft:max",
+        "argument1": {
+          "type": "minecraft:abs",
+          "argument": {
+            "type": "minecraft:interpolated",
+            "argument": {
+              "type": "minecraft:range_choice",
+              "input": "minecraft:y",
+              "max_exclusive": 51.0,
+              "min_inclusive": -60.0,
+              "when_in_range": {
+                "type": "minecraft:noise",
+                "noise": "minecraft:ore_vein_a",
+                "xz_scale": 4.0,
+                "y_scale": 4.0
+              },
+              "when_out_of_range": 0.0
+            }
+          }
+        },
+        "argument2": {
+          "type": "minecraft:abs",
+          "argument": {
+            "type": "minecraft:interpolated",
+            "argument": {
+              "type": "minecraft:range_choice",
+              "input": "minecraft:y",
+              "max_exclusive": 51.0,
+              "min_inclusive": -60.0,
+              "when_in_range": {
+                "type": "minecraft:noise",
+                "noise": "minecraft:ore_vein_b",
+                "xz_scale": 4.0,
+                "y_scale": 4.0
+              },
+              "when_out_of_range": 0.0
+            }
+          }
+        }
+      }
+    },
+    "vein_toggle": {
+      "type": "minecraft:interpolated",
+      "argument": {
+        "type": "minecraft:range_choice",
+        "input": "minecraft:y",
+        "max_exclusive": 51.0,
+        "min_inclusive": -60.0,
+        "when_in_range": {
+          "type": "minecraft:noise",
+          "noise": "minecraft:ore_veininess",
+          "xz_scale": 1.5,
+          "y_scale": 1.5
+        },
+        "when_out_of_range": 0.0
+      }
+    },
+    "ridges": "minecraft:overworld/ridges",
+    "depth": {
+      "type": "lithostitched:mix",
+      "target": "depth",
+      "input": "minecraft:overworld/depth",
+      "argument1": "minecraft:overworld/depth",
+      "argument2": {
+        "type": "terrain-diffusion-mc:pipeline_noise_depth",
+        "channel": "DEPTH"
+      }
+    },
+    "erosion": {
+      "type": "lithostitched:mix",
+      "target": "erosion",
+      "input": "minecraft:overworld/depth",
+      "argument1": "minecraft:overworld/erosion",
+      "argument2": {
+        "type": "terrain-diffusion-mc:pipeline_noise_erosion",
+        "channel": "EROSION"
+      }
+    },
+    "continents": {
+      "type": "lithostitched:mix",
+      "target": "continents",
+      "input": 0.7,
+      "argument1": "minecraft:overworld/continents",
+      "argument2": {
+        "type": "terrain-diffusion-mc:pipeline_noise_continents",
+        "channel": "CONTINENTS"
+      }
+    },
+    "vegetation": {
+      "type": "lithostitched:mix",
+      "target": "vegetation",
+      "input": "minecraft:overworld/depth",
+      "argument1": {
+        "type": "minecraft:shifted_noise",
+        "noise": "minecraft:vegetation",
+        "shift_x": "minecraft:shift_x",
+        "shift_y": 0.0,
+        "shift_z": "minecraft:shift_z",
+        "xz_scale": 0.15,
+        "y_scale": 0.0
+      },
+      "argument2": {
+        "type": "terrain-diffusion-mc:pipeline_noise_vegetation",
+        "channel": "VEGETATION"
+      }
+    },
+    "temperature": {
+      "type": "lithostitched:mix",
+      "target": "temperature",
+      "input": "minecraft:overworld/depth",
+      "argument1": {
+        "type": "minecraft:shifted_noise",
+        "noise": "minecraft:temperature",
+        "shift_x": "minecraft:shift_x",
+        "shift_y": 0.0,
+        "shift_z": "minecraft:shift_z",
+        "xz_scale": 0.15,
+        "y_scale": 0.0
+      },
+      "argument2": {
+        "type": "terrain-diffusion-mc:pipeline_noise_temperature",
+        "channel": "TEMPERATURE"
+      }
+    },
+    "lava": {
+      "type": "minecraft:noise",
+      "noise": "minecraft:aquifer_lava",
+      "xz_scale": 1.0,
+      "y_scale": 1.0
+    },
+    "fluid_level_spread": {
+      "type": "minecraft:noise",
+      "noise": "minecraft:aquifer_fluid_level_spread",
+      "xz_scale": 1.0,
+      "y_scale": 0.7142857142857143
+    },
+    "fluid_level_floodedness": {
+      "type": "minecraft:noise",
+      "noise": "minecraft:aquifer_fluid_level_floodedness",
+      "xz_scale": 1.0,
+      "y_scale": 0.67
+    },
+    "barrier": {
+      "type": "minecraft:noise",
+      "noise": "minecraft:aquifer_barrier",
+      "xz_scale": 1.0,
+      "y_scale": 0.5
+    },
     "preliminary_surface_level": {
       "type": "terrain-diffusion-mc:terrain_diffusion"
     },
