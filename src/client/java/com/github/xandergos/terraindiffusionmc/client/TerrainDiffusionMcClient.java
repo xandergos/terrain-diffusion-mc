@@ -1,56 +1,35 @@
 package com.github.xandergos.terraindiffusionmc.client;
 
-import com.github.xandergos.terraindiffusionmc.TerrainDiffusionMc;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.ClientLowResHeightmapCache;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.LowResHeightmapOverlayRenderer;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.ClientTerrainCostMapCache;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.TerrainCostMapOverlayRenderer;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.ClientFlowDirectionMapCache;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.FlowDirectionOverlayRenderer;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.ClientFlowAccumulationMapCache;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.FlowAccumulationOverlayRenderer;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.ClientRiverCellMapCache;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.RiverCellOverlayRenderer;
-import com.github.xandergos.terraindiffusionmc.client.riverdebug.RiverDebugScreen;
+import com.github.xandergos.terraindiffusionmc.client.debug.TerrainDebugOverlayRenderer;
+import com.github.xandergos.terraindiffusionmc.client.debug.TerrainDebugOverlayScreen;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
 public class TerrainDiffusionMcClient implements ClientModInitializer {
-    private static final KeyBinding.Category DEBUG_CATEGORY = KeyBinding.Category.create(
-            Identifier.of(TerrainDiffusionMc.MOD_ID, "debug")
-    );
+    private static final String OPEN_DEBUG_OVERLAY_KEY_ID =
+            "key.terrain-diffusion-mc.open_terrain_debug_overlay_f8";
 
-    private static KeyBinding openRiverDebugMenuKey;
+    private static KeyBinding openDebugOverlayMenuKey;
 
     @Override
     public void onInitializeClient() {
-        openRiverDebugMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.terrain-diffusion-mc.open_river_debug_menu",
+        openDebugOverlayMenuKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                OPEN_DEBUG_OVERLAY_KEY_ID,
+                InputUtil.Type.KEYSYM,
                 GLFW.GLFW_KEY_F8,
-                DEBUG_CATEGORY
+                KeyBinding.Category.DEBUG
         ));
 
-        ClientTickEvents.END_CLIENT_TICK.register(TerrainDiffusionMcClient::onClientTick);
-        LowResHeightmapOverlayRenderer.register();
-        TerrainCostMapOverlayRenderer.register();
-        FlowDirectionOverlayRenderer.register();
-        FlowAccumulationOverlayRenderer.register();
-        RiverCellOverlayRenderer.register();
-    }
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (openDebugOverlayMenuKey.wasPressed()) {
+                client.setScreen(new TerrainDebugOverlayScreen(client.currentScreen));
+            }
+        });
 
-    private static void onClientTick(MinecraftClient client) {
-        while (openRiverDebugMenuKey.wasPressed()) {
-            client.setScreen(new RiverDebugScreen(client.currentScreen));
-        }
-        ClientLowResHeightmapCache.tick(client);
-        ClientTerrainCostMapCache.tick(client);
-        ClientFlowDirectionMapCache.tick(client);
-        ClientFlowAccumulationMapCache.tick(client);
-        ClientRiverCellMapCache.tick(client);
+        TerrainDebugOverlayRenderer.register();
     }
 }

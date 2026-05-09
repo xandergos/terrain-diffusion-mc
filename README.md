@@ -11,7 +11,6 @@ Three builds are available on the [Releases](https://github.com/xandergos/terrai
 | ------------------------- | --------------------------- | --------------------------------------- |
 | **Windows** (recommended) | Windows with any modern GPU | None                                    |
 | **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
-| **Mac**                   | Apple Silicon               | None                                    |
 | **CPU (Slow)**            | Everything                  | None                                    |
 
 
@@ -113,11 +112,6 @@ Build for CUDA:
 Build for CPU:
 ```
 ./gradlew build -PuseCpu=true
-```
-
-Build for macOS (CoreML):
-```
-./gradlew build -PuseCoreml=true
 ```
 
 Build all:
