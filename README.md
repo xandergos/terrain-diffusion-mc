@@ -13,9 +13,9 @@ Three builds are available on the [Releases](https://github.com/xandergos/terrai
 | ------------------------- | --------------------------- | --------------------------------------- |
 | **Windows** (recommended) | Windows with any modern GPU | None                                    |
 | **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
-| **Mac**                   | Apple Silicon               | None                                    |
-| **CPU (Slow)**            | Everything                  | None                                    |
+| **CPU**                   | Everything else             | None                                    |
 
+> **Mac users:** the CPU build automatically uses CoreML for hardware acceleration on Apple Silicon. No extra setup is needed.
 
 Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer CUDA (may improve performance).
 
@@ -50,8 +50,8 @@ Edit `config/terrain-diffusion-mc.properties` (created automatically on first la
 
 # Inference device: "cpu", "gpu", or "auto" (try GPU first then fall back to CPU).
 # "gpu" uses DirectML on the -windows build, or CUDA on the -cuda build.
-# Defaults to "gpu" so startup fails loudly if GPU inference is expected but not detected.
-# Set to "cpu" if you do not have a supported GPU.
+# GPU builds default to "gpu" so startup fails loudly if no GPU is detected.
+# CPU build defaults to "auto": uses CoreML on macOS, otherwise CPU.
 inference.device=gpu
 
 # Offload inactive models from VRAM between pipeline stages.
@@ -119,19 +119,14 @@ Build for CUDA:
 ./gradlew build -PuseCuda=true
 ```
 
-Build for CPU:
+Build for CPU (also handles macOS/CoreML automatically):
 ```
 ./gradlew build -PuseCpu=true
 ```
 
-Build for macOS (CoreML):
-```
-./gradlew build -PuseCoreml=true
-```
-
 Build all:
 ```
-./gradelw buildAll
+./gradlew buildAll
 ```
 
 ### Building onnxruntime with DirectML
