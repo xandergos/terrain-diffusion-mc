@@ -42,7 +42,13 @@ public enum TerrainDebugOverlayMode {
     RIVER_CHUNK_BANKS("River tile banks", false, false, true),
     RIVER_CHUNK_MATERIALS("River tile materials", false, false, true),
     RIVER_CHUNK_VEGETATION("River tile vegetation", false, false, true),
-    RIVER_CHUNK_TERRAIN_CORRECTION("River tile terrain correction", false, false, true);
+    RIVER_CHUNK_TERRAIN_CORRECTION("River tile terrain correction", false, false, true),
+    GLOBAL_RIVER_LINES("Global river stitched lines", false, false, true),
+    GLOBAL_RIVER_NODES("Global river stitched nodes", false, false, true),
+    GLOBAL_RIVER_DISCHARGE("Global river discharge", false, false, true),
+    GLOBAL_RIVER_WIDTH("Global river corrected width", false, false, true),
+    GLOBAL_RIVER_DEPTH("Global river corrected depth", false, false, true),
+    GLOBAL_RIVER_REGION_BORDERS("Global river region borders", false, false, true);
 
     private final String label;
     private final boolean costMode;
@@ -95,6 +101,18 @@ public enum TerrainDebugOverlayMode {
                     RIVER_CHUNK_MATERIALS,
                     RIVER_CHUNK_VEGETATION,
                     RIVER_CHUNK_TERRAIN_CORRECTION -> true;
+            default -> false;
+        };
+    }
+
+    public boolean isGlobalRiverMode() {
+        return switch (this) {
+            case GLOBAL_RIVER_LINES,
+                    GLOBAL_RIVER_NODES,
+                    GLOBAL_RIVER_DISCHARGE,
+                    GLOBAL_RIVER_WIDTH,
+                    GLOBAL_RIVER_DEPTH,
+                    GLOBAL_RIVER_REGION_BORDERS -> true;
             default -> false;
         };
     }

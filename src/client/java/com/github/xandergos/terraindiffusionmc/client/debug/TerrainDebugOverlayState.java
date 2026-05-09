@@ -6,7 +6,8 @@ public final class TerrainDebugOverlayState {
         COST("Cost overlays"),
         FLOW("Flow overlays"),
         RIVER("River overlays"),
-        RIVER_APPLICATION("River application overlays");
+        RIVER_APPLICATION("River application overlays"),
+        GLOBAL_RIVER("Global river overlays");
 
         private final String label;
 
@@ -24,7 +25,8 @@ public final class TerrainDebugOverlayState {
                 case COST -> FLOW;
                 case FLOW -> RIVER;
                 case RIVER -> RIVER_APPLICATION;
-                case RIVER_APPLICATION -> TERRAIN;
+                case RIVER_APPLICATION -> GLOBAL_RIVER;
+                case GLOBAL_RIVER -> TERRAIN;
             };
         }
     }
@@ -35,6 +37,7 @@ public final class TerrainDebugOverlayState {
     private static TerrainDebugOverlayMode flowMode = TerrainDebugOverlayMode.FLOW_DIRECTION;
     private static TerrainDebugOverlayMode riverMode = TerrainDebugOverlayMode.RIVER_CELLS;
     private static TerrainDebugOverlayMode riverApplicationMode = TerrainDebugOverlayMode.RIVER_CHUNK_DISTANCE;
+    private static TerrainDebugOverlayMode globalRiverMode = TerrainDebugOverlayMode.GLOBAL_RIVER_LINES;
     private static int stride = 4;
     private static int radiusTiles = 1;
     private static double yOffset = 0.35D;
@@ -58,6 +61,7 @@ public final class TerrainDebugOverlayState {
             case FLOW -> flowMode;
             case RIVER -> riverMode;
             case RIVER_APPLICATION -> riverApplicationMode;
+            case GLOBAL_RIVER -> globalRiverMode;
         };
     }
 
@@ -68,6 +72,7 @@ public final class TerrainDebugOverlayState {
             case FLOW -> flowMode = nextFlowMode(flowMode);
             case RIVER -> riverMode = nextRiverMode(riverMode);
             case RIVER_APPLICATION -> riverApplicationMode = nextRiverApplicationMode(riverApplicationMode);
+            case GLOBAL_RIVER -> globalRiverMode = nextGlobalRiverMode(globalRiverMode);
         }
     }
 
@@ -76,7 +81,10 @@ public final class TerrainDebugOverlayState {
             return;
         }
 
-        if (newMode.isRiverChunkOverlayMode()) {
+        if (newMode.isGlobalRiverMode()) {
+            globalRiverMode = newMode;
+            category = OverlayCategory.GLOBAL_RIVER;
+        } else if (newMode.isRiverChunkOverlayMode()) {
             riverApplicationMode = newMode;
             category = OverlayCategory.RIVER_APPLICATION;
         } else if (newMode.isCostMode()) {
@@ -211,4 +219,17 @@ public final class TerrainDebugOverlayState {
             default -> TerrainDebugOverlayMode.RIVER_CHUNK_DISTANCE;
         };
     }
+    private static TerrainDebugOverlayMode nextGlobalRiverMode(TerrainDebugOverlayMode current) {
+        return switch (current) {
+            case OFF -> TerrainDebugOverlayMode.GLOBAL_RIVER_LINES;
+            case GLOBAL_RIVER_LINES -> TerrainDebugOverlayMode.GLOBAL_RIVER_NODES;
+            case GLOBAL_RIVER_NODES -> TerrainDebugOverlayMode.GLOBAL_RIVER_DISCHARGE;
+            case GLOBAL_RIVER_DISCHARGE -> TerrainDebugOverlayMode.GLOBAL_RIVER_WIDTH;
+            case GLOBAL_RIVER_WIDTH -> TerrainDebugOverlayMode.GLOBAL_RIVER_DEPTH;
+            case GLOBAL_RIVER_DEPTH -> TerrainDebugOverlayMode.GLOBAL_RIVER_REGION_BORDERS;
+            case GLOBAL_RIVER_REGION_BORDERS -> TerrainDebugOverlayMode.OFF;
+            default -> TerrainDebugOverlayMode.GLOBAL_RIVER_LINES;
+        };
+    }
+
 }

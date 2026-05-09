@@ -7,6 +7,11 @@ import com.github.xandergos.terraindiffusionmc.debug.flow.TerrainFlowConfig;
 import com.github.xandergos.terraindiffusionmc.debug.flow.TerrainFlowTile;
 import com.github.xandergos.terraindiffusionmc.debug.river.TerrainRiverConfig;
 import com.github.xandergos.terraindiffusionmc.debug.river.TerrainRiverTile;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.GlobalRiverNetworkProvider;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.RiverNetwork;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.RiverNode;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.RiverPoint;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.RiverSegment;
 import com.github.xandergos.terraindiffusionmc.debug.river.overlay.TerrainRiverChunkOverlay;
 import com.github.xandergos.terraindiffusionmc.debug.river.vector.TerrainRiverNetwork;
 import com.github.xandergos.terraindiffusionmc.debug.river.vector.TerrainRiverSpatialIndex;
@@ -70,6 +75,12 @@ public final class TerrainDebugOverlayRenderer {
                         TerrainFlowTile tile = TerrainDebugTileClientCache.getFlowIfReady(blockStartZ, blockStartX, tileSize, tileSize);
                         if (tile != null) {
                             emitFlowTile(tile, mode);
+                        }
+                    } else if (mode.isGlobalRiverMode()) {
+                        TerrainDebugTileClientCache.requestGlobalRiverNetwork(playerBlockX, playerBlockZ);
+                        RiverNetwork network = TerrainDebugTileClientCache.getGlobalRiverNetworkIfReady(playerBlockX, playerBlockZ);
+                        if (network != null) {
+                            emitGlobalRiverNetwork(network, mode, playerBlockX, playerBlockZ, tileSize, radius);
                         }
                     } else if (mode.isRiverChunkOverlayMode()) {
                         TerrainDebugTileClientCache.requestRiverTileOverlay(blockStartZ, blockStartX, tileSize, tileSize);
@@ -145,6 +156,150 @@ public final class TerrainDebugOverlayRenderer {
                 int sampleX = sampleCoord(x, xEndExclusive, tile.width());
                 int sampleZ = sampleCoord(z, zEndExclusive, tile.height());
                 emitQuad(tile.blockStartX(), tile.blockStartZ(), x, z, xEndExclusive, zEndExclusive, y, flowColor(tile, sampleX, sampleZ, mode));
+            }
+        }
+    }
+
+    private static void emitGlobalRiverNetwork(RiverNetwork network, TerrainDebugOverlayMode mode, int playerBlockX, int playerBlockZ, int tileSize, int radiusTiles) {
+        int queryRadius = Math.max(256, tileSize * Math.max(1, radiusTiles) + 256);
+        int minX = playerBlockX - queryRadius;
+        int minZ = playerBlockZ - queryRadius;
+        int maxX = playerBlockX + queryRadius;
+        int maxZ = playerBlockZ + queryRadius;
+
+        if (mode == TerrainDebugOverlayMode.GLOBAL_RIVER_REGION_BORDERS) {
+            emitGlobalRegionBorders(playerBlockX, playerBlockZ);
+        }
+
+        float maxDischarge = 1.0F;
+        float maxWidth = 1.0F;
+        float maxDepth = 1.0F;
+        for (RiverSegment segment : network.queryAabb(minX, minZ, maxX, maxZ)) {
+            maxDischarge = Math.max(maxDischarge, segment.discharge());
+            maxWidth = Math.max(maxWidth, segment.maxWidthBlocks());
+            maxDepth = Math.max(maxDepth, segment.depthBlocks());
+        }
+
+        if (mode == TerrainDebugOverlayMode.GLOBAL_RIVER_NODES) {
+            for (RiverSegment segment : network.queryAabb(minX, minZ, maxX, maxZ)) {
+                emitGlobalSegment(segment, TerrainDebugOverlayMode.GLOBAL_RIVER_LINES, maxDischarge, maxWidth, maxDepth, true);
+            }
+            for (RiverNode node : network.nodes()) {
+                if (node.worldX() >= minX && node.worldX() <= maxX && node.worldZ() >= minZ && node.worldZ() <= maxZ) {
+                    emitGlobalNode(node);
+                }
+            }
+            return;
+        }
+
+        for (RiverSegment segment : network.queryAabb(minX, minZ, maxX, maxZ)) {
+            emitGlobalSegment(segment, mode, maxDischarge, maxWidth, maxDepth, false);
+        }
+    }
+
+    private static void emitGlobalSegment(RiverSegment segment, TerrainDebugOverlayMode mode, float maxDischarge, float maxWidth, float maxDepth, boolean muted) {
+        if (segment.polyline().size() < 2) {
+            return;
+        }
+
+        int color = muted ? argb(105, 70, 130, 160) : globalRiverColor(segment, mode, maxDischarge, maxWidth, maxDepth);
+        float width = muted ? 0.20F : globalRiverLineWidth(segment, mode, maxDischarge, maxWidth, maxDepth);
+        for (int i = 0; i < segment.polyline().size() - 1; i++) {
+            Vec3d a = globalPoint(segment.polyline().get(i));
+            Vec3d b = globalPoint(segment.polyline().get(i + 1));
+            GizmoDrawing.line(a, b, color, width);
+        }
+    }
+
+    private static Vec3d globalPoint(RiverPoint point) {
+        return new Vec3d(
+                point.worldX(),
+                point.surfaceY() + TerrainDebugOverlayState.yOffset() + 1.35D,
+                point.worldZ()
+        );
+    }
+
+    private static void emitGlobalNode(RiverNode node) {
+        Vec3d point = new Vec3d(
+                node.worldX(),
+                node.surfaceY() + TerrainDebugOverlayState.yOffset() + 1.65D,
+                node.worldZ()
+        );
+        GizmoDrawing.point(point, globalNodeColor(node.type()), globalNodeSize(node.type()));
+    }
+
+    private static int globalRiverColor(RiverSegment segment, TerrainDebugOverlayMode mode, float maxDischarge, float maxWidth, float maxDepth) {
+        return switch (mode) {
+            case GLOBAL_RIVER_DISCHARGE -> riverPreviewColor(segment.discharge(), maxDischarge);
+            case GLOBAL_RIVER_WIDTH -> riverWidthVectorColor(segment.maxWidthBlocks());
+            case GLOBAL_RIVER_DEPTH -> depthColor(segment.depthBlocks(), maxDepth);
+            case GLOBAL_RIVER_REGION_BORDERS -> argb(255, 70, 235, 255);
+            default -> argb(255, 40, 230, 255);
+        };
+    }
+
+    private static float globalRiverLineWidth(RiverSegment segment, TerrainDebugOverlayMode mode, float maxDischarge, float maxWidth, float maxDepth) {
+        return switch (mode) {
+            case GLOBAL_RIVER_DISCHARGE -> {
+                float n = contrast(logNormalizedAccumulation(segment.discharge(), maxDischarge));
+                yield MathHelper.clamp(0.42F + n * 2.70F, 0.42F, 3.20F);
+            }
+            case GLOBAL_RIVER_WIDTH -> {
+                float n = maxWidth <= 0.0F ? 0.0F : clamp01(segment.maxWidthBlocks() / maxWidth);
+                yield MathHelper.clamp(0.42F + (float) Math.sqrt(n) * 3.00F, 0.42F, 3.40F);
+            }
+            case GLOBAL_RIVER_DEPTH -> {
+                float n = maxDepth <= 0.0F ? 0.0F : clamp01(segment.depthBlocks() / maxDepth);
+                yield MathHelper.clamp(0.42F + n * 2.20F, 0.42F, 2.80F);
+            }
+            default -> 0.62F;
+        };
+    }
+
+    private static int globalNodeColor(RiverNode.NodeType type) {
+        return switch (type) {
+            case SOURCE -> argb(255, 65, 255, 225);
+            case CONFLUENCE -> argb(255, 255, 185, 20);
+            case OUTLET, OCEAN_OUTLET -> argb(255, 255, 65, 180);
+            case LAKE_INLET, LAKE_OUTLET -> argb(255, 95, 185, 255);
+            case BOUNDARY -> argb(255, 210, 115, 255);
+            case INTERNAL -> argb(255, 230, 230, 230);
+        };
+    }
+
+    private static float globalNodeSize(RiverNode.NodeType type) {
+        return switch (type) {
+            case CONFLUENCE -> 2.75F;
+            case OUTLET, OCEAN_OUTLET -> 2.30F;
+            case SOURCE -> 1.95F;
+            case LAKE_INLET, LAKE_OUTLET -> 2.10F;
+            case BOUNDARY -> 1.70F;
+            case INTERNAL -> 1.20F;
+        };
+    }
+
+    private static void emitGlobalRegionBorders(int playerBlockX, int playerBlockZ) {
+        int regionSize = GlobalRiverNetworkProvider.DEFAULT_REGION_SIZE_BLOCKS;
+        int centerRegionX = Math.floorDiv(playerBlockX, regionSize);
+        int centerRegionZ = Math.floorDiv(playerBlockZ, regionSize);
+        int y = 220;
+        int color = argb(215, 255, 240, 80);
+        float width = 0.34F;
+
+        for (int rz = centerRegionZ - 1; rz <= centerRegionZ + 1; rz++) {
+            for (int rx = centerRegionX - 1; rx <= centerRegionX + 1; rx++) {
+                int minX = rx * regionSize;
+                int minZ = rz * regionSize;
+                int maxX = minX + regionSize;
+                int maxZ = minZ + regionSize;
+                Vec3d nw = new Vec3d(minX, y, minZ);
+                Vec3d ne = new Vec3d(maxX, y, minZ);
+                Vec3d se = new Vec3d(maxX, y, maxZ);
+                Vec3d sw = new Vec3d(minX, y, maxZ);
+                GizmoDrawing.line(nw, ne, color, width);
+                GizmoDrawing.line(ne, se, color, width);
+                GizmoDrawing.line(se, sw, color, width);
+                GizmoDrawing.line(sw, nw, color, width);
             }
         }
     }
@@ -642,6 +797,14 @@ public final class TerrainDebugOverlayRenderer {
     private static float widthVisualNormalized(float widthBlocks) {
         float base = normalize(widthBlocks, TerrainRiverConfig.MIN_WIDTH_BLOCKS, TerrainRiverConfig.MAX_WIDTH_BLOCKS);
         return (float) Math.sqrt(clamp01(base));
+    }
+
+    private static int depthColor(float depth, float maxDepth) {
+        float value = maxDepth <= 0.0F ? 0.0F : contrast(clamp01(depth / maxDepth));
+        int r = lerp(45, 145, value);
+        int g = lerp(120, 45, value);
+        int b = lerp(255, 255, value);
+        return argb(255, r, g, b);
     }
 
     private static float logNormalizedAccumulation(float accumulation, float maxAccumulation) {

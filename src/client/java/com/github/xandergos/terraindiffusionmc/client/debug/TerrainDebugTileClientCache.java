@@ -10,6 +10,9 @@ import com.github.xandergos.terraindiffusionmc.debug.river.TerrainRiverTile;
 import com.github.xandergos.terraindiffusionmc.debug.river.overlay.TerrainRiverChunkOverlay;
 import com.github.xandergos.terraindiffusionmc.debug.river.overlay.TerrainRiverChunkOverlayBuilder;
 import com.github.xandergos.terraindiffusionmc.debug.river.overlay.TerrainRiverChunkOverlayConfig;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.GlobalRiverNetworkProvider;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.RiverNetwork;
+import com.github.xandergos.terraindiffusionmc.debug.river.global.RiverRegionKey;
 import com.github.xandergos.terraindiffusionmc.debug.river.vector.TerrainRiverNetwork;
 import com.github.xandergos.terraindiffusionmc.debug.river.vector.TerrainRiverSpatialIndex;
 import com.github.xandergos.terraindiffusionmc.debug.river.vector.TerrainRiverVectorBuilder;
@@ -45,6 +48,8 @@ public final class TerrainDebugTileClientCache {
     private static final Map<Key, CompletableFuture<TerrainRiverNetwork>> RIVER_VECTOR_FUTURES = new ConcurrentHashMap<>();
     private static final Map<Key, CompletableFuture<TerrainRiverSpatialIndex>> RIVER_SPATIAL_INDEX_FUTURES = new ConcurrentHashMap<>();
     private static final Map<Key, CompletableFuture<TerrainRiverChunkOverlay>> RIVER_CHUNK_OVERLAY_FUTURES = new ConcurrentHashMap<>();
+    private static final Map<GlobalRiverKey, CompletableFuture<RiverNetwork>> GLOBAL_RIVER_NETWORK_FUTURES = new ConcurrentHashMap<>();
+    private static final GlobalRiverNetworkProvider GLOBAL_RIVER_PROVIDER = GlobalRiverNetworkProvider.createDefault();
 
     private TerrainDebugTileClientCache() {
     }
@@ -243,6 +248,42 @@ public final class TerrainDebugTileClientCache {
         return getRiverTileOverlayIfReady(chunkBlockStartZ, chunkBlockStartX, size, size);
     }
 
+    public static void requestGlobalRiverNetwork(int blockX, int blockZ) {
+        if (!LocalTerrainProvider.isInitialized()) {
+            return;
+        }
+
+        GlobalRiverKey key = currentGlobalRiverKey(blockX, blockZ);
+        GLOBAL_RIVER_NETWORK_FUTURES.computeIfAbsent(key, ignored -> CompletableFuture.supplyAsync(() -> {
+            RiverRegionKey regionKey = RiverRegionKey.fromBlock(
+                    key.seed(),
+                    key.scale(),
+                    blockX,
+                    blockZ,
+                    GlobalRiverNetworkProvider.DEFAULT_REGION_SIZE_BLOCKS
+            );
+            return GLOBAL_RIVER_PROVIDER.getOrBuildStitchedRegion(
+                    regionKey,
+                    GlobalRiverNetworkProvider.DEFAULT_STITCH_RADIUS_REGIONS
+            ).network();
+        }, EXECUTOR));
+
+        trimCompletedEntriesIfNeeded(GLOBAL_RIVER_NETWORK_FUTURES);
+    }
+
+    public static RiverNetwork getGlobalRiverNetworkIfReady(int blockX, int blockZ) {
+        if (!LocalTerrainProvider.isInitialized()) {
+            return null;
+        }
+
+        CompletableFuture<RiverNetwork> future = GLOBAL_RIVER_NETWORK_FUTURES.get(currentGlobalRiverKey(blockX, blockZ));
+        if (future == null || !future.isDone() || future.isCompletedExceptionally()) {
+            return null;
+        }
+
+        return future.getNow(null);
+    }
+
     public static void clear() {
         FUTURES.clear();
         COST_FUTURES.clear();
@@ -251,6 +292,7 @@ public final class TerrainDebugTileClientCache {
         RIVER_VECTOR_FUTURES.clear();
         RIVER_SPATIAL_INDEX_FUTURES.clear();
         RIVER_CHUNK_OVERLAY_FUTURES.clear();
+        GLOBAL_RIVER_NETWORK_FUTURES.clear();
     }
 
     private static TerrainRiverChunkOverlay buildRiverTileOverlay(int blockStartZ, int blockStartX, int sizeZ, int sizeX) {
@@ -300,6 +342,23 @@ public final class TerrainDebugTileClientCache {
         return TerrainFlowBuilder.buildCropped(expanded, expandedCost, blockStartX, blockStartZ, sizeX, sizeZ);
     }
 
+    private static GlobalRiverKey currentGlobalRiverKey(int blockX, int blockZ) {
+        RiverRegionKey regionKey = RiverRegionKey.fromBlock(
+                LocalTerrainProvider.getSeed(),
+                WorldScaleManager.getCurrentScale(),
+                blockX,
+                blockZ,
+                GlobalRiverNetworkProvider.DEFAULT_REGION_SIZE_BLOCKS
+        );
+        return new GlobalRiverKey(
+                regionKey.seed(),
+                regionKey.scale(),
+                regionKey.regionX(),
+                regionKey.regionZ(),
+                regionKey.regionSizeBlocks()
+        );
+    }
+
     private static Key currentKey(int blockStartZ, int blockStartX, int sizeZ, int sizeX) {
         return new Key(
                 LocalTerrainProvider.getSeed(),
@@ -311,12 +370,12 @@ public final class TerrainDebugTileClientCache {
         );
     }
 
-    private static <T> void trimCompletedEntriesIfNeeded(Map<Key, CompletableFuture<T>> futures) {
+    private static <K, T> void trimCompletedEntriesIfNeeded(Map<K, CompletableFuture<T>> futures) {
         if (futures.size() <= MAX_ENTRIES) {
             return;
         }
 
-        Iterator<Map.Entry<Key, CompletableFuture<T>>> iterator = futures.entrySet().iterator();
+        Iterator<Map.Entry<K, CompletableFuture<T>>> iterator = futures.entrySet().iterator();
         while (iterator.hasNext() && futures.size() > MAX_ENTRIES / 2) {
             CompletableFuture<T> future = iterator.next().getValue();
             if (future.isDone() || future.isCompletedExceptionally()) {
@@ -326,5 +385,8 @@ public final class TerrainDebugTileClientCache {
     }
 
     private record Key(long seed, int scale, int blockStartZ, int blockStartX, int sizeZ, int sizeX) {
+    }
+
+    private record GlobalRiverKey(long seed, int scale, int regionX, int regionZ, int regionSizeBlocks) {
     }
 }
