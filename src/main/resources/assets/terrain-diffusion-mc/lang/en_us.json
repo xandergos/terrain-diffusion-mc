@@ -5,8 +5,5 @@
   "terrain-diffusion-mc.world_settings.scale": "World Scale",
   "terrain-diffusion-mc.world_settings.world_scale_description": "Set World Scale for this world.",
   "terrain-diffusion-mc.world_settings.scale_error": "Scale must be an integer >= 1",
-  "key.category.terrain-diffusion-mc.debug": "Terrain Diffusion Debug",
-  "key.terrain-diffusion-mc.open_river_debug_menu": "Open River Debug Menu",
-  "terrain-diffusion-mc.river_debug.title": "River Debug Overlays",
-  "terrain-diffusion-mc.river_debug.refresh": "Refresh Low-res Heightmap"
+  "key.terrain-diffusion-mc.open_terrain_debug_overlay_f8": "Open terrain debug overlay"
 }
