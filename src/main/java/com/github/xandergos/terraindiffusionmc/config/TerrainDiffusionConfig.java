@@ -12,7 +12,6 @@ public final class TerrainDiffusionConfig {
     private static final String FILE_NAME = "terrain-diffusion-mc.properties";
     private static final String RESOURCE_PATH = "/" + FILE_NAME;
     private static final Properties PROPERTIES = new Properties();
-    private static final String DEFAULT_INFERENCE_DEVICE = "gpu";
     private static final String BUILD_VARIANT = readBuildVariant();
     private static final boolean DEFAULT_OFFLOAD_MODELS = true;
     private static final boolean DEFAULT_VALIDATE_MODEL = true;
@@ -32,10 +31,13 @@ public final class TerrainDiffusionConfig {
 
     /** Inference device: "cpu", "gpu", or "auto" (try GPU then fall back to CPU). */
     public static String inferenceDevice() {
+        String device = readString("inference.device", "gpu");
+        // On the CPU build "gpu" is meaningless (no dedicated GPU provider), so treat it as "auto":
+        // tries CoreML on macOS, falls back to CPU elsewhere.
         if ("cpu".equals(BUILD_VARIANT)) {
-            return "cpu";
+            return "auto";
         }
-        return readString("inference.device", DEFAULT_INFERENCE_DEVICE);
+        return device;
     }
 
     /** Whether to offload inactive models from VRAM between pipeline stages. */
@@ -85,7 +87,7 @@ public final class TerrainDiffusionConfig {
         }
 
         if (!loadedFromResource) {
-            PROPERTIES.setProperty("inference.device", DEFAULT_INFERENCE_DEVICE);
+            PROPERTIES.setProperty("inference.device", "gpu");
             PROPERTIES.setProperty("validate_model", String.valueOf(DEFAULT_VALIDATE_MODEL));
             PROPERTIES.setProperty("tile_size", String.valueOf(DEFAULT_TILE_SIZE));
         }

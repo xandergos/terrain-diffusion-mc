@@ -339,7 +339,7 @@ public final class OnnxModel implements AutoCloseable {
                 setResolvedProviderOnce("CoreML");
             } catch (Throwable t) {
                 if (coremlWarnLoggedOnce.compareAndSet(false, true)) {
-                    LOG.warn("CoreML not available: {} - {}. This is expected if you are not using a CoreML build.",
+                    LOG.warn("CoreML not available: {} - {}. This is expected on non-macOS platforms.",
                             t.getClass().getSimpleName(), t.getMessage());
                 }
             }
