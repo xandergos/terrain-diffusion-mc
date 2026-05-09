@@ -1,0 +1,237 @@
+{
+  "cellNoiseScale": 300,
+  "warpAmplitude": 80,
+  "warpScale": 200,
+  "warpOctaves": 2,
+  "warpLacunarity": 2.0,
+  "warpGain": 0.5,
+  "regions": [
+    {
+      "name": "frozen_ocean",
+      "conditions": {
+        "elevation": {"max": 0},
+        "temperature": {"max": -5}
+      },
+      "biomes": [
+        {"biome": "minecraft:frozen_ocean",           "priority": 8},
+        {"biome": "biomeswevegone:shattered_glacier",  "priority": 2}
+      ]
+    },
+    {
+      "name": "cold_ocean",
+      "conditions": {
+        "elevation": {"max": 0},
+        "temperature": {"min": -5, "max": 12}
+      },
+      "biomes": [
+        {"biome": "minecraft:cold_ocean", "priority": 10}
+      ]
+    },
+    {
+      "name": "temperate_ocean",
+      "conditions": {
+        "elevation": {"max": 0},
+        "temperature": {"min": 12, "max": 26}
+      },
+      "biomes": [
+        {"biome": "minecraft:ocean", "priority": 10}
+      ]
+    },
+    {
+      "name": "warm_ocean",
+      "conditions": {
+        "elevation": {"max": 0},
+        "temperature": {"min": 26}
+      },
+      "biomes": [
+        {"biome": "minecraft:warm_ocean",            "priority": 6},
+        {"biome": "biomeswevegone:rainbow_beach",     "priority": 2},
+        {"biome": "biomeswevegone:dacite_shore",      "priority": 2}
+      ]
+    },
+    {
+      "name": "steep_frozen",
+      "conditions": {
+        "elevation": {"min": 0},
+        "temperature": {"max": 0},
+        "slope": {"min": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:frozen_peaks",           "priority": 7},
+        {"biome": "biomeswevegone:shattered_glacier",  "priority": 3}
+      ]
+    },
+    {
+      "name": "steep_rocky",
+      "conditions": {
+        "elevation": {"min": 0},
+        "temperature": {"min": 0},
+        "slope": {"min": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:stony_peaks",            "priority": 5},
+        {"biome": "biomeswevegone:red_rock_peaks",    "priority": 2},
+        {"biome": "biomeswevegone:dacite_ridges",     "priority": 2},
+        {"biome": "biomeswevegone:howling_peaks",     "priority": 1}
+      ]
+    },
+    {
+      "name": "high_mountain_frozen",
+      "conditions": {
+        "elevation": {"min": 2500},
+        "temperature": {"max": 5},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:snowy_slopes",  "priority": 5},
+        {"biome": "minecraft:frozen_peaks",  "priority": 3},
+        {"biome": "minecraft:snowy_taiga",   "priority": 2}
+      ]
+    },
+    {
+      "name": "high_mountain_cool",
+      "conditions": {
+        "elevation": {"min": 2500},
+        "temperature": {"min": 5, "max": 15},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:grove",               "priority": 4},
+        {"biome": "minecraft:meadow",              "priority": 4},
+        {"biome": "biomeswevegone:howling_peaks",  "priority": 2}
+      ]
+    },
+    {
+      "name": "frozen_tundra",
+      "conditions": {
+        "elevation": {"min": 0},
+        "temperature": {"max": -5},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:snowy_plains",          "priority": 6},
+        {"biome": "biomeswevegone:crimson_tundra",   "priority": 3},
+        {"biome": "minecraft:snowy_taiga",           "priority": 1}
+      ]
+    },
+    {
+      "name": "boreal_forest",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": -5, "max": 5},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:taiga",                      "priority": 6},
+        {"biome": "biomeswevegone:coniferous_forest",     "priority": 4},
+        {"biome": "biomeswevegone:maple_taiga",           "priority": 3},
+        {"biome": "biomeswevegone:aspen_boreal",          "priority": 2},
+        {"biome": "biomeswevegone:redwood_thicket",       "priority": 2},
+        {"biome": "biomeswevegone:canadian_shield",       "priority": 1}
+      ]
+    },
+    {
+      "name": "temperate_dry",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": 5, "max": 20},
+        "precipitation": {"max": 600},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:plains",                  "priority": 6},
+        {"biome": "minecraft:meadow",                  "priority": 2},
+        {"biome": "biomeswevegone:allium_shrubland",   "priority": 3},
+        {"biome": "biomeswevegone:coconino_meadow",    "priority": 3},
+        {"biome": "biomeswevegone:rose_fields",        "priority": 2},
+        {"biome": "biomeswevegone:pumpkin_valley",     "priority": 2},
+        {"biome": "biomeswevegone:skyris_vale",        "priority": 1}
+      ]
+    },
+    {
+      "name": "temperate_forest",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": 5, "max": 20},
+        "precipitation": {"min": 600},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:forest",                       "priority": 6},
+        {"biome": "terrain-diffusion-mc:forest_sparse",    "priority": 2},
+        {"biome": "biomeswevegone:black_forest",            "priority": 3},
+        {"biome": "biomeswevegone:ebony_woods",             "priority": 2},
+        {"biome": "biomeswevegone:sakura_grove",            "priority": 2},
+        {"biome": "biomeswevegone:zelkova_forest",          "priority": 2},
+        {"biome": "biomeswevegone:overgrowth_woodlands",    "priority": 2},
+        {"biome": "biomeswevegone:cika_woods",              "priority": 1},
+        {"biome": "biomeswevegone:lush_stacks",             "priority": 1}
+      ]
+    },
+    {
+      "name": "warm_dry",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": 20, "max": 26},
+        "precipitation": {"max": 800},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:savanna",                       "priority": 5},
+        {"biome": "biomeswevegone:araucaria_savanna",       "priority": 3},
+        {"biome": "biomeswevegone:baobab_savanna",          "priority": 3},
+        {"biome": "biomeswevegone:ironwood_gour",           "priority": 2},
+        {"biome": "biomeswevegone:firecracker_chaparral",   "priority": 2}
+      ]
+    },
+    {
+      "name": "warm_moist",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": 20, "max": 26},
+        "precipitation": {"min": 800},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:swamp",                         "priority": 4},
+        {"biome": "terrain-diffusion-mc:forest_sparse",     "priority": 2},
+        {"biome": "biomeswevegone:bayou",                   "priority": 3},
+        {"biome": "biomeswevegone:cypress_swamplands",      "priority": 3},
+        {"biome": "biomeswevegone:cypress_wetlands",        "priority": 2},
+        {"biome": "biomeswevegone:white_mangrove_marshes",  "priority": 2}
+      ]
+    },
+    {
+      "name": "hot_desert",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": 26},
+        "precipitation": {"max": 500},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:desert",                   "priority": 5},
+        {"biome": "biomeswevegone:atacama_outback",     "priority": 3},
+        {"biome": "biomeswevegone:mojave_desert",       "priority": 3},
+        {"biome": "biomeswevegone:windswept_desert",    "priority": 2}
+      ]
+    },
+    {
+      "name": "tropical_jungle",
+      "conditions": {
+        "elevation": {"min": 0, "max": 2500},
+        "temperature": {"min": 26},
+        "precipitation": {"min": 500},
+        "slope": {"max": 0.78}
+      },
+      "biomes": [
+        {"biome": "minecraft:jungle",                    "priority": 5},
+        {"biome": "biomeswevegone:jacaranda_jungle",     "priority": 3},
+        {"biome": "biomeswevegone:tropical_rainforest",  "priority": 3},
+        {"biome": "biomeswevegone:enchanted_tangle",     "priority": 2},
+        {"biome": "biomeswevegone:fragment_jungle",      "priority": 2},
+        {"biome": "biomeswevegone:crag_gardens",         "priority": 1}
+      ]
+    }
+  ]
+}

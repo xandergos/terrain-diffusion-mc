@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc;
 
+import com.github.xandergos.terraindiffusionmc.config.BiomeRegionConfig;
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
@@ -62,6 +63,7 @@ public class TerrainDiffusionMc {
     private void onCommonSetup(FMLCommonSetupEvent event) {
         ModelAssetManager.ensureAssetsReady();
         PipelineModels.load();
+        BiomeRegionConfig.load();
     }
 
     private void onServerStarting(ServerStartingEvent event) {

@@ -5,8 +5,73 @@ package com.github.xandergos.terraindiffusionmc.pipeline;
  *
  * <p>Uses fixed-seed FastNoiseLite instances for climate and elevation noise perturbations.
  * Biome IDs match the Python server's _BIOME_ID mapping.
+ *
+ * <p>When {@link #compiledRegions} is non-null (set by the biome source after loading
+ * biome-regions.json), surface classification is fully data-driven. Cave biomes remain
+ * hardcoded via {@link #classifyCaveBiome}.
  */
 public final class BiomeClassifier {
+
+    // Variable indices for the data-driven region system
+    public static final int VAR_TEMPERATURE   = 0;
+    public static final int VAR_PRECIPITATION = 1;
+    public static final int VAR_ELEVATION     = 2;
+    public static final int VAR_SLOPE         = 3;
+    public static final int VAR_COUNT         = 4;
+
+    public static int varIndex(String name) {
+        switch (name) {
+            case "temperature":   return VAR_TEMPERATURE;
+            case "precipitation": return VAR_PRECIPITATION;
+            case "elevation":     return VAR_ELEVATION;
+            case "slope":         return VAR_SLOPE;
+            default:              return -1;
+        }
+    }
+
+    /**
+     * Compiled form of a biome region. Set by {@code BiomeRegionConfig.buildCompiled()} via
+     * the BiomeSource constructor; read (without locking) in the classify hot loop.
+     */
+    public static final class CompiledRegion {
+        // Per-variable normalization scale for distance computation
+        private static final float[] DIST_SCALES = {60f, 2000f, 6000f, 1.5f};
+
+        public final float[] min;         // [VAR_COUNT] inclusive lower bounds
+        public final float[] max;         // [VAR_COUNT] inclusive upper bounds
+        public final short[] biomeIds;    // biome pool
+        public final float[] priorities;  // per-biome priority (parallel to biomeIds)
+
+        public CompiledRegion(float[] min, float[] max, short[] biomeIds, float[] priorities) {
+            this.min = min;
+            this.max = max;
+            this.biomeIds = biomeIds;
+            this.priorities = priorities;
+        }
+
+        public boolean matches(float[] vars) {
+            for (int i = 0; i < VAR_COUNT; i++) {
+                if (vars[i] < min[i] || vars[i] > max[i]) return false;
+            }
+            return true;
+        }
+
+        /** Normalized L1 distance from vars to the nearest point inside this region. */
+        public float distanceTo(float[] vars) {
+            float dist = 0f;
+            for (int i = 0; i < VAR_COUNT; i++) {
+                dist += Math.max(0f, min[i] - vars[i]) / DIST_SCALES[i];
+                dist += Math.max(0f, vars[i] - max[i]) / DIST_SCALES[i];
+            }
+            return dist;
+        }
+    }
+
+    /**
+     * Data-driven region array. Null means use the hardcoded classifier.
+     * Written once by the BiomeSource constructor; read-only thereafter.
+     */
+    public static volatile CompiledRegion[] compiledRegions = null;
 
     // Fixed-seed noise instances (matching Python's module-level _TEMP_NOISE etc.)
     private static final FastNoiseLite TEMP_NOISE, TEMP_NOISE_FINE;
@@ -15,6 +80,16 @@ public final class BiomeClassifier {
     private static final FastNoiseLite BIOME_VARIANT_NOISE;
     private static final FastNoiseLite CAVE_BIOME_NOISE;
     private static final FastNoiseLite DEEP_DARK_NOISE;
+    /**
+     * Cellular/Voronoi noise and domain-warp noise for spatially-coherent biome patch selection.
+     * Re-initialized by {@link #configureNoise} when biome-regions.json is loaded.
+     * {@code WARP_NOISE} is null when domain warp is disabled (amplitude == 0).
+     */
+    private static volatile FastNoiseLite CELL_NOISE;
+    private static volatile FastNoiseLite WARP_NOISE;
+    // Per-thread mutable coordinate for DomainWarp; avoids allocation in the hot loop.
+    private static final ThreadLocal<FastNoiseLite.Vector2> WARP_COORD =
+            ThreadLocal.withInitial(() -> new FastNoiseLite.Vector2(0f, 0f));
 
     static {
         TEMP_NOISE = makeFnl(12345, 1f/500f, 3, 2f, 0.5f);
@@ -28,6 +103,43 @@ public final class BiomeClassifier {
         CAVE_BIOME_NOISE = makeFnl(99991, 1f/180f, 3, 2f, 0.5f);
         // Deep dark: separate higher-octave noise for narrow, scattered patches.
         DEEP_DARK_NOISE = makeFnl(13577, 1f/250f, 4, 2f, 0.5f);
+
+        configureNoise(300f, 200f, 80f, 2, 2f, 0.5f);
+    }
+
+    /**
+     * (Re-)initialize the cellular and domain-warp noise instances.
+     * Called once from the static block with defaults, then again from
+     * {@code BiomeRegionConfig.load()} with user-configured values.
+     *
+     * @param cellScale      spatial scale of the Voronoi cells in pixels
+     * @param warpScale      spatial scale of the domain-warp noise in pixels
+     * @param warpAmp        maximum coordinate displacement; 0 disables warping
+     * @param warpOctaves    fractal octave count for the domain warp
+     * @param warpLacunarity frequency multiplier between warp octaves
+     * @param warpGain       amplitude multiplier between warp octaves
+     */
+    public static void configureNoise(float cellScale, float warpScale, float warpAmp,
+                                      int warpOctaves, float warpLacunarity, float warpGain) {
+        FastNoiseLite cell = new FastNoiseLite(22222);
+        cell.SetNoiseType(FastNoiseLite.NoiseType.Cellular);
+        cell.SetFrequency(1f / Math.max(1f, cellScale));
+        cell.SetCellularReturnType(FastNoiseLite.CellularReturnType.CellValue);
+        CELL_NOISE = cell;
+
+        if (warpAmp == 0f) {
+            WARP_NOISE = null;
+        } else {
+            FastNoiseLite warp = new FastNoiseLite(33333);
+            warp.SetDomainWarpType(FastNoiseLite.DomainWarpType.OpenSimplex2);
+            warp.SetFrequency(1f / Math.max(1f, warpScale));
+            warp.SetDomainWarpAmp(warpAmp);
+            warp.SetFractalType(FastNoiseLite.FractalType.DomainWarpProgressive);
+            warp.SetFractalOctaves(Math.max(1, warpOctaves));
+            warp.SetFractalLacunarity(warpLacunarity);
+            warp.SetFractalGain(warpGain);
+            WARP_NOISE = warp;
+        }
     }
 
     private static FastNoiseLite makeFnl(int seed, float freq, int oct, float lac, float gain) {
@@ -178,6 +290,27 @@ public final class BiomeClassifier {
             return out;
         }
         short[] out = new short[H * W];
+
+        // Allocate pool arrays once per call for data-driven region selection.
+        // Reused across all pixels by resetting poolSize to 0 at the start of each pixel.
+        final int MAX_POOL = 64;
+        CompiledRegion[] regions = compiledRegions; // read volatile once
+        short[] poolBiomes      = null;
+        float[] poolPriSum      = null;
+        int[]   poolCount       = null;
+        float[] vars            = null;
+        FastNoiseLite cellNoise = null;
+        FastNoiseLite warpNoise = null;
+        if (regions != null && regions.length > 0) {
+            poolBiomes = new short[MAX_POOL];
+            poolPriSum = new float[MAX_POOL];
+            poolCount  = new int[MAX_POOL];
+            vars       = new float[VAR_COUNT];
+            // Snapshot volatile noise refs once so the inner loop doesn't re-read them.
+            cellNoise  = CELL_NOISE;
+            warpNoise  = WARP_NOISE;
+        }
+
         for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
                 int idx = r * W + c;
@@ -192,15 +325,102 @@ public final class BiomeClassifier {
                 float snf = SNOW_NOISE_FINE.GetNoise(nx, ny);
                 float snowNoiseVal = 3.0f * snc + 2.0f * snf;
 
-                float elevVal   = elev[idx];
-                float altM      = Math.max(0f, elevVal);
-                float slope     = slopeRatio[idx];
+                float elevVal = elev[idx];
+                float altM    = Math.max(0f, elevVal);
+                float slope   = slopeRatio[idx];
 
                 // Climate channels: [0]=temp, [1]=t_season, [2]=precip, [3]=p_cv
-                float temp     = climate[idx] + tempNoiseVal;
-                float tSeason  = climate[H * W + idx];
-                float precip   = Math.max(0f, climate[2 * H * W + idx]) * precipNoiseFactVal;
-                float pCV      = climate[3 * H * W + idx];
+                float temp    = climate[idx] + tempNoiseVal;
+                float tSeason = climate[H * W + idx];
+                float precip  = Math.max(0f, climate[2 * H * W + idx]) * precipNoiseFactVal;
+                float pCV     = climate[3 * H * W + idx];
+
+                short biome;
+
+                // ── Data-driven path ─────────────────────────────────────────────────
+                if (vars != null) {
+                    vars[VAR_TEMPERATURE]   = temp;
+                    vars[VAR_PRECIPITATION] = precip;
+                    vars[VAR_ELEVATION]     = elevVal;
+                    vars[VAR_SLOPE]         = slope;
+
+                    int poolSize = 0;
+
+                    // Accumulate biomes from all matching regions; average priority for duplicates.
+                    for (CompiledRegion region : regions) {
+                        if (!region.matches(vars)) continue;
+                        for (int k = 0; k < region.biomeIds.length && poolSize < MAX_POOL; k++) {
+                            short bid = region.biomeIds[k];
+                            float pri = region.priorities[k];
+                            int found = -1;
+                            for (int p = 0; p < poolSize; p++) {
+                                if (poolBiomes[p] == bid) { found = p; break; }
+                            }
+                            if (found >= 0) {
+                                poolPriSum[found] += pri;
+                                poolCount[found]++;
+                            } else {
+                                poolBiomes[poolSize] = bid;
+                                poolPriSum[poolSize] = pri;
+                                poolCount[poolSize]  = 1;
+                                poolSize++;
+                            }
+                        }
+                    }
+
+                    // Fall back to closest region when no region matches.
+                    if (poolSize == 0) {
+                        float bestDist = Float.MAX_VALUE;
+                        int bestIdx = -1;
+                        for (int ri = 0; ri < regions.length; ri++) {
+                            if (regions[ri].biomeIds.length == 0) continue;
+                            float d = regions[ri].distanceTo(vars);
+                            if (d < bestDist) { bestDist = d; bestIdx = ri; }
+                        }
+                        if (bestIdx >= 0) {
+                            CompiledRegion closest = regions[bestIdx];
+                            for (int k = 0; k < closest.biomeIds.length && poolSize < MAX_POOL; k++) {
+                                poolBiomes[poolSize] = closest.biomeIds[k];
+                                poolPriSum[poolSize] = closest.priorities[k];
+                                poolCount[poolSize]  = 1;
+                                poolSize++;
+                            }
+                        }
+                    }
+
+                    if (poolSize == 0) {
+                        biome = PLAINS;
+                    } else {
+                        // Average priorities for duplicates, then compute total weight.
+                        float total = 0f;
+                        for (int p = 0; p < poolSize; p++) {
+                            poolPriSum[p] /= poolCount[p];
+                            total += poolPriSum[p];
+                        }
+                        // Domain-warp the lookup coordinates before sampling cell noise.
+                        // Uses a per-thread reusable Vector2 to avoid allocation.
+                        float cx = nx, cy = ny;
+                        if (warpNoise != null) {
+                            FastNoiseLite.Vector2 coord = WARP_COORD.get();
+                            coord.x = nx; coord.y = ny;
+                            warpNoise.DomainWarp(coord);
+                            cx = coord.x; cy = coord.y;
+                        }
+                        float cellVal = (cellNoise.GetNoise(cx, cy) + 1f) * 0.5f; // [0, 1]
+                        float target  = cellVal * total;
+                        float cumul   = 0f;
+                        biome = poolBiomes[poolSize - 1]; // default to last entry
+                        for (int p = 0; p < poolSize; p++) {
+                            cumul += poolPriSum[p];
+                            if (cumul >= target) { biome = poolBiomes[p]; break; }
+                        }
+                    }
+
+                    out[idx] = biome;
+                    continue;
+                }
+
+                // ── Hardcoded fallback path (used when no biome-regions.json is loaded) ──
 
                 // Derived climate variables
                 float tStd     = tSeason / 100f;
@@ -267,7 +487,7 @@ public final class BiomeClassifier {
                 boolean warm      = temp >= 20f && temp < 26f;
                 boolean hot       = temp >= 26f;
 
-                short biome = PLAINS;
+                biome = PLAINS;
 
                 if (isOcean) {
                     if (frozen) biome = FROZEN_OCEAN;
