@@ -87,7 +87,7 @@ public final class TerrainDiffusionConfig {
         }
 
         if (!loadedFromResource) {
-            PROPERTIES.setProperty("inference.device", DEFAULT_INFERENCE_DEVICE);
+            PROPERTIES.setProperty("inference.device", "gpu");
             PROPERTIES.setProperty("validate_model", String.valueOf(DEFAULT_VALIDATE_MODEL));
             PROPERTIES.setProperty("tile_size", String.valueOf(DEFAULT_TILE_SIZE));
         }
