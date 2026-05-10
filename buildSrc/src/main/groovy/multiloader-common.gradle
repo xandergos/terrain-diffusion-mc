@@ -7,10 +7,12 @@ base {
     archivesName = "${mod_id}-${project.name}-${minecraft_version}"
 }
 
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(java_version)
-    withSourcesJar()
-    withJavadocJar()
+def terrainDiffusionJavaVersion = (findProperty('java_version') ?: rootProject.findProperty('java_version') ?: '21') as Integer
+
+extensions.configure(org.gradle.api.plugins.JavaPluginExtension) { org.gradle.api.plugins.JavaPluginExtension javaExtension ->
+    javaExtension.toolchain.languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(terrainDiffusionJavaVersion))
+    javaExtension.withSourcesJar()
+    javaExtension.withJavadocJar()
 }
 
 repositories {
@@ -58,15 +60,21 @@ repositories {
     }
 }
 
+def terrainDiffusionLicenseFile = rootProject.file('LICENSE')
+
 sourcesJar {
-    from(rootProject.file('LICENSE')) {
-        rename { "${it}_${mod_name}" }
+    if (terrainDiffusionLicenseFile.exists()) {
+        from(terrainDiffusionLicenseFile) {
+            rename { "${it}_${mod_name}" }
+        }
     }
 }
 
 jar {
-    from(rootProject.file('LICENSE')) {
-        rename { "${it}_${mod_name}" }
+    if (terrainDiffusionLicenseFile.exists()) {
+        from(terrainDiffusionLicenseFile) {
+            rename { "${it}_${mod_name}" }
+        }
     }
 
     manifest {

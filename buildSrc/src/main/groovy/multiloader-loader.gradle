@@ -22,20 +22,9 @@ if (project.name != 'fabric') {
 }
 
 def terrainDiffusionBuildVariant = {
-    boolean useCuda = project.hasProperty('useCuda') && project.property('useCuda').toString().toLowerCase() == 'true'
-    boolean useDml = project.hasProperty('useDml') && project.property('useDml').toString().toLowerCase() == 'true'
-    boolean useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
-
-    if ([useCuda, useDml, useCpu].count { it } > 1) {
-        throw new GradleException('Only one of -PuseCuda, -PuseDml, or -PuseCpu may be specified at a time.')
-    }
-    if (useCuda) return 'cuda'
-    if (useDml) return 'windows'
-    if (useCpu) return 'cpu'
-
-    // Fabric's historical default was the DirectML/Windows build. Forge and NeoForge
-    // currently only declare the CPU ONNX dependency, so their safe default is CPU.
-    return project.name == 'fabric' ? 'windows' : 'cpu'
+    return project.ext.has('terrainDiffusionBuildVariant')
+            ? project.ext.terrainDiffusionBuildVariant
+            : rootProject.ext.terrainDiffusionBuildVariant(project)
 }
 
 def modelRepositorySlug = 'xandergos/terrain-diffusion-30m-onnx'

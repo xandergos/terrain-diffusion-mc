@@ -4,25 +4,7 @@ plugins {
     id 'maven-publish'
 }
 
-
-def useCuda = project.hasProperty('useCuda') && project.property('useCuda').toString().toLowerCase() == 'true'
-def useDml = project.hasProperty('useDml') && project.property('useDml').toString().toLowerCase() == 'true'
-def useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
-def withSourcesJar = project.hasProperty('withSourcesJar') && project.property('withSourcesJar').toString().toLowerCase() == 'true'
-
-if ([useCuda, useDml, useCpu].count { it } > 1) {
-    throw new GradleException('Only one of -PuseCuda, -PuseDml, or -PuseCpu may be specified at a time.')
-}
-if (!useDml && !useCpu && !useCuda) useDml = true
-
-def buildVariant = useCuda ? 'cuda' : useDml ? 'windows' : 'cpu'
-
-version = "${rootProject.version}-${buildVariant}+${project.minecraft_version}"
-group = project.group
-
-base {
-    archivesName = project.archives_base_name
-}
+def buildVariant = project.ext.terrainDiffusionBuildVariant
 
 loom {
     def aw = project(':common').file("src/main/resources/${mod_id}.accesswidener")
@@ -60,7 +42,6 @@ loom {
     }
 }
 
-
 sourceSets {
     main {
         java {
@@ -82,11 +63,6 @@ fabricApi {
     }
 }
 
-repositories {
-    mavenCentral()
-    flatDir { dirs rootProject.file('libs') }
-}
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
     mappings loom.layered {
@@ -95,17 +71,6 @@ dependencies {
     }
     modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-
-    if (useCuda) {
-        implementation "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
-        include "com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0"
-    } else if (useCpu) {
-        implementation "com.microsoft.onnxruntime:onnxruntime:1.20.0"
-        include "com.microsoft.onnxruntime:onnxruntime:1.20.0"
-    } else if (useDml) {
-        implementation 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
-        include 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
-    }
 }
 
 processResources {
@@ -124,26 +89,14 @@ processResources {
     }
 }
 
-def targetJavaVersion = 21
-tasks.withType(JavaCompile).configureEach {
-    it.options.encoding = 'UTF-8'
-    if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
-        it.options.release.set(targetJavaVersion)
-    }
-}
-
-java {
-    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-    sourceCompatibility = javaVersion
-    targetCompatibility = javaVersion
-    if (withSourcesJar) {
-        withSourcesJar()
-    }
-}
 
 jar {
-    from(rootProject.file('LICENSE.txt')) {
-        rename { "${it}_${project.archivesBaseName}" }
+    def licenseFile = rootProject.file('LICENSE.txt')
+    if (!licenseFile.exists()) licenseFile = rootProject.file('LICENSE')
+    if (licenseFile.exists()) {
+        from(licenseFile) {
+            rename { "${it}_${project.archivesBaseName}" }
+        }
     }
 }
 
@@ -167,21 +120,6 @@ tasks.register('pipelineTest', JavaExec) {
     mainClass = 'com.github.xandergos.terraindiffusionmc.pipeline.PipelineTest'
     jvmArgs '-Xmx8g'
 }
-
-def isWindows = System.getProperty('os.name').toLowerCase().startsWith('windows')
-def gradlewExecutable = rootProject.file(isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
-
-['Cuda', 'Dml', 'Cpu'].each { variant ->
-    tasks.register("build${variant}", Exec) {
-        workingDir rootProject.projectDir
-        commandLine gradlewExecutable, ':fabric:build', "-Puse${variant}=true"
-    }
-}
-
-tasks.register('buildAll') {
-    dependsOn 'buildCuda', 'buildDml', 'buildCpu'
-}
-
 
 // Implement mcgradleconventions loader attribute
 def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)

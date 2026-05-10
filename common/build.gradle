@@ -17,8 +17,8 @@ neoForge {
 }
 
 repositories {
+    maven { name = 'TerrainDiffusionLocalDml'; url = uri(rootProject.ext.terrainDiffusionLocalDmlMavenUrl()) }
     mavenCentral()
-    flatDir { dirs rootProject.file('libs') }
 }
 
 dependencies {
@@ -26,9 +26,9 @@ dependencies {
     // fabric and neoforge both bundle mixinextras, so it is safe to use it in common
     compileOnly group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.3.5'
     annotationProcessor group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.3.5'
-    compileOnly 'com.microsoft.onnxruntime:onnxruntime:1.20.0'
-    compileOnly 'com.microsoft.onnxruntime:onnxruntime_gpu:1.20.0'
-    compileOnly 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
+    compileOnly "com.microsoft.onnxruntime:onnxruntime:${rootProject.ext.terrainDiffusionOnnxRuntimeVersion}"
+    compileOnly "com.microsoft.onnxruntime:onnxruntime_gpu:${rootProject.ext.terrainDiffusionOnnxRuntimeVersion}"
+    compileOnly rootProject.ext.terrainDiffusionOnnxNotation('windows')
 }
 
 sourceSets {

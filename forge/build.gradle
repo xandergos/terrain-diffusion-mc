@@ -1,11 +1,8 @@
 plugins {
     id 'multiloader-loader'
-    id 'net.minecraftforge.gradle' version '[6.0.46,6.2)'
-    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT'
+    id 'net.minecraftforge.gradle'
+    id 'org.spongepowered.mixin'
     id 'idea'
-}
-base {
-    archivesName = "${mod_name}-forge-${minecraft_version}"
 }
 mixin {
     config("${mod_id}.mixins.json")
@@ -73,18 +70,10 @@ minecraft {
 
 sourceSets.main.resources.srcDir 'src/generated/resources'
 
-sourceSets.main.java.srcDir project(':common').file('src/client/java')
-sourceSets.main.resources.srcDir project(':common').file('src/client/resources')
 
 
-
-repositories {
-    mavenCentral()
-    flatDir { dirs rootProject.file('libs') }
-}
 
 dependencies {
-    implementation 'com.microsoft.onnxruntime:onnxruntime:1.20.0'
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     annotationProcessor("org.spongepowered:mixin:0.8.5-SNAPSHOT:processor")
 }

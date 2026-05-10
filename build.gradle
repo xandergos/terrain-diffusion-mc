@@ -3,4 +3,223 @@ plugins {
     id 'fabric-loom' version '1.13-SNAPSHOT' apply false
     // see https://projects.neoforged.net/neoforged/moddevgradle for new versions
     id 'net.neoforged.moddev' version '2.0.123' apply false
+    id 'net.minecraftforge.gradle' version '[6.0.46,6.2)' apply false
+    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT' apply false
+}
+
+ext {
+    terrainDiffusionLoaderProjects = ['fabric', 'forge', 'neoforge']
+    terrainDiffusionOnnxRuntimeVersion = '1.20.0'
+    terrainDiffusionOnnxDmlVersion = '1.0'
+    terrainDiffusionLocalDmlMavenRepo = rootProject.file('.gradle/terrain-diffusion-local-maven')
+
+    terrainDiffusionPrepareLocalDmlMavenArtifact = { ->
+        File sourceJar = rootProject.file('libs/onnxruntime-dml.jar')
+        if (!sourceJar.exists()) {
+            throw new GradleException("Missing DirectML runtime jar: ${sourceJar}. The DML/windows build requires libs/onnxruntime-dml.jar.")
+        }
+
+        def module = [group: 'com.microsoft.onnxruntime', name: 'onnxruntime-dml', version: rootProject.ext.terrainDiffusionOnnxDmlVersion]
+        File moduleDir = new File(rootProject.ext.terrainDiffusionLocalDmlMavenRepo, "${module.group.replace('.', '/')}/${module.name}/${module.version}")
+        File targetJar = new File(moduleDir, "${module.name}-${module.version}.jar")
+        File targetPom = new File(moduleDir, "${module.name}-${module.version}.pom")
+
+        moduleDir.mkdirs()
+        if (!targetJar.exists() || targetJar.length() != sourceJar.length() || targetJar.lastModified() < sourceJar.lastModified()) {
+            targetJar.bytes = sourceJar.bytes
+        }
+        targetPom.text = """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<project xmlns=\"http://maven.apache.org/POM/4.0.0\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>${module.group}</groupId>
+  <artifactId>${module.name}</artifactId>
+  <version>${module.version}</version>
+  <name>ONNX Runtime DirectML local bridge</name>
+</project>
+"""
+        return module
+    }
+
+    terrainDiffusionPropertyEnabled = { Project targetProject, String propertyName ->
+        def value = targetProject.findProperty(propertyName) ?: rootProject.findProperty(propertyName)
+        return value?.toString()?.equalsIgnoreCase('true') ?: false
+    }
+
+    terrainDiffusionBuildVariant = { Project targetProject ->
+        boolean useCuda = rootProject.ext.terrainDiffusionPropertyEnabled(targetProject, 'useCuda')
+        boolean useDml = rootProject.ext.terrainDiffusionPropertyEnabled(targetProject, 'useDml')
+        boolean useCpu = rootProject.ext.terrainDiffusionPropertyEnabled(targetProject, 'useCpu')
+
+        if ([useCuda, useDml, useCpu].count { it } > 1) {
+            throw new GradleException('Only one of -PuseCuda, -PuseDml, or -PuseCpu may be specified at a time.')
+        }
+        if (useCuda) return 'cuda'
+        if (useCpu) return 'cpu'
+        return 'windows'
+    }
+
+    terrainDiffusionOnnxModule = { String buildVariant ->
+        switch (buildVariant) {
+            case 'cuda':
+                return [group: 'com.microsoft.onnxruntime', name: 'onnxruntime_gpu', version: rootProject.ext.terrainDiffusionOnnxRuntimeVersion]
+            case 'cpu':
+                return [group: 'com.microsoft.onnxruntime', name: 'onnxruntime', version: rootProject.ext.terrainDiffusionOnnxRuntimeVersion]
+            case 'windows':
+                return rootProject.ext.terrainDiffusionPrepareLocalDmlMavenArtifact()
+            default:
+                throw new GradleException("Unknown Terrain Diffusion build variant: ${buildVariant}")
+        }
+    }
+
+    terrainDiffusionOnnxNotation = { String buildVariant ->
+        def module = rootProject.ext.terrainDiffusionOnnxModule(buildVariant)
+        return "${module.group}:${module.name}:${module.version}"
+    }
+
+    terrainDiffusionLocalDmlMavenUrl = { ->
+        rootProject.ext.terrainDiffusionPrepareLocalDmlMavenArtifact()
+        return rootProject.ext.terrainDiffusionLocalDmlMavenRepo
+    }
+}
+
+def terrainDiffusionJavaVersion = (findProperty('java_version') ?: '21') as Integer
+
+def terrainDiffusionGradlewExecutable = providers.provider {
+    rootProject.file(System.getProperty('os.name').toLowerCase().startsWith('windows') ? 'gradlew.bat' : 'gradlew').absolutePath
+}
+
+def terrainDiffusionLoaderTaskPath = { String loaderName -> ":${loaderName}:build" }
+
+tasks.register('buildCpu', Exec) {
+    group = 'build'
+    description = 'Builds Fabric, Forge, and NeoForge CPU jars.'
+    workingDir rootProject.projectDir
+    commandLine terrainDiffusionGradlewExecutable.get(), 'build', '-PuseCpu=true'
+}
+
+tasks.register('buildCuda', Exec) {
+    group = 'build'
+    description = 'Builds Fabric, Forge, and NeoForge CUDA jars.'
+    workingDir rootProject.projectDir
+    commandLine terrainDiffusionGradlewExecutable.get(), 'build', '-PuseCuda=true'
+}
+
+tasks.register('buildDml', Exec) {
+    group = 'build'
+    description = 'Builds Fabric, Forge, and NeoForge DirectML/Windows jars.'
+    workingDir rootProject.projectDir
+    commandLine terrainDiffusionGradlewExecutable.get(), 'build', '-PuseDml=true'
+}
+
+tasks.named('buildCuda') { mustRunAfter rootProject.tasks.named('buildCpu') }
+tasks.named('buildDml') { mustRunAfter rootProject.tasks.named('buildCuda') }
+
+tasks.register('buildAll') {
+    group = 'build'
+    description = 'Builds CPU, CUDA, and DirectML/Windows variants for all loaders.'
+    dependsOn 'buildCpu', 'buildCuda', 'buildDml'
+}
+
+subprojects { subproject ->
+    subproject.plugins.withType(org.gradle.api.plugins.JavaPlugin).configureEach {
+        subproject.extensions.configure(org.gradle.api.plugins.JavaPluginExtension) { org.gradle.api.plugins.JavaPluginExtension javaExtension ->
+            def javaVersion = JavaVersion.toVersion(terrainDiffusionJavaVersion)
+            javaExtension.sourceCompatibility = javaVersion
+            javaExtension.targetCompatibility = javaVersion
+            javaExtension.toolchain.languageVersion.set(org.gradle.jvm.toolchain.JavaLanguageVersion.of(terrainDiffusionJavaVersion))
+        }
+
+        subproject.tasks.withType(JavaCompile).configureEach { JavaCompile compileTask ->
+            compileTask.options.encoding = 'UTF-8'
+            compileTask.options.release.set(terrainDiffusionJavaVersion)
+        }
+    }
+
+    subproject.plugins.withId('multiloader-loader') {
+        String buildVariant = rootProject.ext.terrainDiffusionBuildVariant(subproject)
+        subproject.ext.terrainDiffusionBuildVariant = buildVariant
+        subproject.version = "${rootProject.version}-${buildVariant}+${subproject.minecraft_version}"
+        subproject.group = rootProject.group
+
+        subproject.extensions.configure(org.gradle.api.plugins.BasePluginExtension) { org.gradle.api.plugins.BasePluginExtension baseExtension ->
+            baseExtension.archivesName = rootProject.archives_base_name
+        }
+
+        subproject.repositories {
+            maven { name = 'TerrainDiffusionLocalDml'; url = uri(rootProject.ext.terrainDiffusionLocalDmlMavenUrl()) }
+            mavenCentral()
+            maven { name = 'Fabric'; url = uri('https://maven.fabricmc.net') }
+            maven { name = 'Forge'; url = uri('https://maven.minecraftforge.net') }
+            maven { name = 'NeoForge'; url = uri('https://maven.neoforged.net/releases') }
+            maven { name = 'ParchmentMC'; url = uri('https://maven.parchmentmc.org') }
+            flatDir { dirs rootProject.file('libs') }
+        }
+
+        subproject.dependencies {
+            implementation rootProject.ext.terrainDiffusionOnnxNotation(buildVariant)
+        }
+
+        ['Cpu', 'Cuda', 'Dml'].each { variantName ->
+            subproject.tasks.register("build${variantName}", Exec) {
+                group = 'build'
+                description = "Builds the ${subproject.name} ${variantName} jar."
+                workingDir rootProject.projectDir
+                commandLine terrainDiffusionGradlewExecutable.get(), terrainDiffusionLoaderTaskPath(subproject.name), "-Puse${variantName}=true"
+            }
+        }
+
+        subproject.tasks.named('buildCuda') { mustRunAfter subproject.tasks.named('buildCpu') }
+        subproject.tasks.named('buildDml') { mustRunAfter subproject.tasks.named('buildCuda') }
+
+        subproject.tasks.register('buildAll') {
+            group = 'build'
+            description = "Builds CPU, CUDA, and DirectML/Windows variants for ${subproject.name}."
+            dependsOn 'buildCpu', 'buildCuda', 'buildDml'
+        }
+    }
+
+    subproject.plugins.withId('fabric-loom') {
+        if (subproject.name == 'fabric') {
+            subproject.dependencies {
+                String buildVariant = subproject.ext.terrainDiffusionBuildVariant
+                include rootProject.ext.terrainDiffusionOnnxNotation(buildVariant)
+            }
+        }
+    }
+
+    subproject.plugins.withId('net.minecraftforge.gradle') {
+        def forgeJarJar = subproject.extensions.getByName('jarJar')
+        forgeJarJar.enable()
+
+        subproject.dependencies {
+            String buildVariant = subproject.ext.terrainDiffusionBuildVariant
+            def onnxModule = rootProject.ext.terrainDiffusionOnnxModule(buildVariant)
+            jarJar(group: onnxModule.group, name: onnxModule.name, version: "[${onnxModule.version}]") {
+                forgeJarJar.pin(it, onnxModule.version)
+            }
+        }
+
+        subproject.tasks.named('build') {
+            dependsOn subproject.tasks.named('jarJar')
+        }
+    }
+
+    subproject.plugins.withId('net.neoforged.moddev') {
+        if (subproject.name in rootProject.ext.terrainDiffusionLoaderProjects) {
+            subproject.dependencies {
+                String buildVariant = subproject.ext.terrainDiffusionBuildVariant
+                def onnxModule = rootProject.ext.terrainDiffusionOnnxModule(buildVariant)
+                jarJar(implementation("${onnxModule.group}:${onnxModule.name}")) {
+                    version {
+                        strictly "[${onnxModule.version}]"
+                        prefer onnxModule.version
+                    }
+                }
+            }
+
+            subproject.tasks.named('build') {
+                dependsOn subproject.tasks.named('jarJar')
+            }
+        }
+    }
 }

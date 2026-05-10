@@ -42,13 +42,6 @@ neoForge {
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
-sourceSets.main.java.srcDir project(':common').file('src/client/java')
-sourceSets.main.resources.srcDir project(':common').file('src/client/resources')
-
-repositories {
-    mavenCentral()
-    flatDir { dirs rootProject.file('libs') }
-}
 
 
 // Implement mcgradleconventions loader attribute
@@ -70,6 +63,3 @@ sourceSets.configureEach {
     }
 }
 
-dependencies {
-    implementation 'com.microsoft.onnxruntime:onnxruntime:1.20.0'
-}
