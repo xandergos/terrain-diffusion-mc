@@ -8,9 +8,10 @@ This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.co
 
 Three builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
 
+**The CPU build is slow unless you are on MacOS.**
 
 | Build                     | Supports                    | Setup required                          |
-| ------------------------- | --------------------------- | --------------------------------------- |
+|---------------------------| --------------------------- | --------------------------------------- |
 | **Windows** (recommended) | Windows with any modern GPU | None                                    |
 | **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
 | **CPU**                   | Everything else             | None                                    |
@@ -109,24 +110,34 @@ An internet connection is required during the build to fetch the pinned model ma
 
 The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source. 
 
-Build for Windows (DirectML):
+Build all loaders for Windows (DirectML):
 ```
-./gradlew build -PuseDml=true
-```
-
-Build for CUDA:
-```
-./gradlew build -PuseCuda=true
+./gradlew buildDml
+# or: ./gradlew build -PuseDml=true
 ```
 
-Build for CPU (also handles macOS/CoreML automatically):
+Build all loaders for CUDA:
 ```
-./gradlew build -PuseCpu=true
+./gradlew buildCuda
+# or: ./gradlew build -PuseCuda=true
 ```
 
-Build all:
+Build all loaders for CPU (also handles macOS/CoreML automatically):
+```
+./gradlew buildCpu
+# or: ./gradlew build -PuseCpu=true
+```
+
+Build every variant for Fabric, Forge, and NeoForge:
 ```
 ./gradlew buildAll
+```
+
+You can also build one loader/variant directly, for example:
+```
+./gradlew :fabric:buildDml
+./gradlew :forge:buildCuda
+./gradlew :neoforge:buildCpu
 ```
 
 ### Building onnxruntime with DirectML
