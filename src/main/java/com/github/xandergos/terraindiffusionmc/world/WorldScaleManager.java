@@ -20,7 +20,7 @@ public final class WorldScaleManager {
      * Loads or creates per-world scale settings and sets the active runtime value.
      *
      * <p>If the world has no explicit stored scale yet, this applies pending
-     * world-creation selection when present, otherwise falls back to 2.
+     * world-creation selection when present, otherwise falls back to the value set in terrain-diffusion-mc.properties.
      */
     public static void initializeForWorld(ServerWorld serverWorld) {
         WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()
