@@ -1,7 +1,6 @@
 plugins {
     id 'fabric-loom' version '1.9-SNAPSHOT' apply false
-    id 'net.minecraftforge.gradle' version '[6.0.46,6.2)' apply false
-    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT' apply false
+    id 'net.neoforged.moddev.legacyforge' version '2.0.77' apply false
 }
 
 ext {
@@ -183,23 +182,4 @@ subprojects { subproject ->
         }
     }
 
-
-    subproject.plugins.withId('net.minecraftforge.gradle') {
-        if (subproject.name == 'forge') {
-            def forgeJarJar = subproject.extensions.getByName('jarJar')
-            forgeJarJar.enable()
-
-            subproject.dependencies {
-                String buildVariant = subproject.ext.terrainDiffusionBuildVariant
-                def onnxModule = rootProject.ext.terrainDiffusionOnnxModule(buildVariant)
-                jarJar(group: onnxModule.group, name: onnxModule.name, version: "[${onnxModule.version}]") {
-                    forgeJarJar.pin(it, onnxModule.version)
-                }
-            }
-
-            subproject.tasks.named('build') {
-                dependsOn subproject.tasks.named('jarJar')
-            }
-        }
-    }
 }

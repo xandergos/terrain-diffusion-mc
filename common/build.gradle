@@ -1,14 +1,16 @@
 plugins {
     id 'multiloader-common'
-    id 'net.minecraftforge.gradle'
+    id 'net.neoforged.moddev.legacyforge'
 }
 
-minecraft {
-    mappings channel: 'parchment', version: "${parchment_version}-${parchment_minecraft}"
-
-    def at = file('src/main/resources/META-INF/accesstransformer.cfg')
-    if (at.exists()) {
-        accessTransformer = at
+legacyForge {
+    mcpVersion = minecraft_version
+    if (file('src/main/resources/META-INF/accesstransformer.cfg').exists()) {
+        accessTransformers = ['src/main/resources/META-INF/accesstransformer.cfg']
+    }
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
     }
 }
 
@@ -18,7 +20,6 @@ repositories {
 }
 
 dependencies {
-    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.5'
     compileOnly group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.3.5'
     annotationProcessor group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.3.5'
