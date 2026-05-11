@@ -1,73 +1,91 @@
 plugins {
     id 'multiloader-loader'
-    id 'net.neoforged.moddev.legacyforge'
+    id 'net.minecraftforge.gradle'
+    id 'org.spongepowered.mixin'
+    id 'idea'
 }
 
 mixin {
     add(sourceSets.main, "${mod_id}.refmap.json")
-
     config("${mod_id}.mixins.json")
     config("${mod_id}.client.mixins.json")
     config("${mod_id}.forge.mixins.json")
 }
 
-legacyForge {
-    version = "${minecraft_version}-${forge_version}"
+jar {
+    finalizedBy('reobfJar')
+    manifest {
+        attributes([
+                'MixinConfigs': "${mod_id}.mixins.json,${mod_id}.client.mixins.json,${mod_id}.forge.mixins.json"
+        ])
+    }
+}
 
-    validateAccessTransformers = true
+minecraft {
+    mappings channel: 'parchment', version: "${parchment_version}-${parchment_minecraft}"
+    copyIdeResources = true
 
     def at = project(':common').file('src/main/resources/META-INF/accesstransformer.cfg')
     if (at.exists()) {
-        accessTransformers = [at.absolutePath]
-    }
-    parchment {
-        minecraftVersion = parchment_minecraft
-        mappingsVersion = parchment_version
-    }
-    runs {
-        client {
-            client()
-        }
-        data {
-            data()
-            programArguments.addAll '--mod', fml_mod_id, '--all', '--output', file('src/generated/resources/').absolutePath, '--existing', file('src/main/resources/').absolutePath
-        }
-        server {
-            server()
-        }
+        accessTransformer = at
     }
 
-    mods {
-        "${fml_mod_id}" {
-            sourceSet sourceSets.main
+    runs {
+        client {
+            workingDirectory file('runs/client')
+            ideaModule "${rootProject.name}.${project.name}.main"
+            taskName 'Client'
+            mods {
+                "${fml_mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            workingDirectory file('runs/server')
+            ideaModule "${rootProject.name}.${project.name}.main"
+            taskName 'Server'
+            mods {
+                "${fml_mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        data {
+            workingDirectory file('runs/data')
+            ideaModule "${rootProject.name}.${project.name}.main"
+            args '--mod', fml_mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+            taskName 'Data'
+            mods {
+                "${fml_mod_id}" {
+                    source sourceSets.main
+                }
+            }
         }
     }
 }
 
 sourceSets.main.resources.srcDir 'src/generated/resources'
 
-def terrainDiffusionForgeBuildVariant = rootProject.ext.terrainDiffusionBuildVariant(project)
-def terrainDiffusionForgeOnnxNotation = rootProject.ext.terrainDiffusionOnnxNotation(terrainDiffusionForgeBuildVariant)
-
 dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     annotationProcessor('org.spongepowered:mixin:0.8.5-SNAPSHOT:processor')
-
-    // Required by ModDevGradle/Forge 1.20.1 runs for external Java libraries.
-    // Without this, ModLauncher does not expose ai.onnxruntime.* at runtime.
-    additionalRuntimeClasspath terrainDiffusionForgeOnnxNotation
-
-    jarJar(implementation(terrainDiffusionForgeOnnxNotation))
 }
 
-tasks.named('build') {
-    dependsOn tasks.named('jarJar')
+publishing {
+    publications {
+        named('mavenJava', MavenPublication) {
+            fg.component(it)
+        }
+    }
 }
 
-jar {
-    finalizedBy('reobfJar')
-    manifest.attributes([
-            'MixinConfigs': "${mod_id}.mixins.json,${mod_id}.client.mixins.json,${mod_id}.forge.mixins.json"
-    ])
+sourceSets.each {
+    def dir = layout.buildDirectory.dir("sourceSets/$it.name")
+    it.output.resourcesDir = dir
+    it.java.destinationDirectory = dir
 }
 
 def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)

@@ -78,7 +78,7 @@ processResources {
     inputs.property 'minecraft_version', project.minecraft_version
     inputs.property 'loader_version', project.fabric_loader_version
     inputs.property 'build_variant', buildVariant
-    filteringCharset = 'UTF-8'
+    filteringCharset 'UTF-8'
     filesMatching('fabric.mod.json') {
         expand 'version': project.version,
                 'minecraft_version': project.minecraft_version,
@@ -86,6 +86,17 @@ processResources {
     }
     filesMatching('build-variant.properties') {
         expand 'build_variant': buildVariant
+    }
+}
+
+
+jar {
+    def licenseFile = rootProject.file('LICENSE.txt')
+    if (!licenseFile.exists()) licenseFile = rootProject.file('LICENSE')
+    if (licenseFile.exists()) {
+        from(licenseFile) {
+            rename { "${it}_${project.archivesBaseName}" }
+        }
     }
 }
 

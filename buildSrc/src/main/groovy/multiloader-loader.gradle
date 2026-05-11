@@ -10,8 +10,8 @@ sourceSets {
 }
 
 // Fabric uses Loom's splitEnvironmentSourceSets() and wires common client code into
-// sourceSets.client from fabric/build.gradle. Forge and NeoForge do not split client
-// classes by default, so they must compile/package the common client mixins from main.
+// sourceSets.client from fabric/build.gradle. Forge does not split client
+// classes by default, so it must compile/package the common client mixins from main.
 if (project.name != 'fabric') {
     sourceSets {
         main {
