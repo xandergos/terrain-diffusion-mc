@@ -137,8 +137,13 @@ subprojects { subproject ->
         subproject.version = "${rootProject.version}-${buildVariant}+${subproject.minecraft_version}"
         subproject.group = rootProject.group
 
+        def loaderArchivePrefix = [
+                fabric: 'Fabric',
+                forge : 'Forge'
+        ][subproject.name] ?: subproject.name.capitalize()
+
         subproject.extensions.configure(org.gradle.api.plugins.BasePluginExtension) { org.gradle.api.plugins.BasePluginExtension baseExtension ->
-            baseExtension.archivesName = rootProject.archives_base_name
+            baseExtension.archivesName = "${loaderArchivePrefix}-${rootProject.archives_base_name}"
         }
 
         subproject.repositories {
