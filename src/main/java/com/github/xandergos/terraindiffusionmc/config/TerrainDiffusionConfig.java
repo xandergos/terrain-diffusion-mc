@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.config;
 
+import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import net.fabricmc.loader.api.FabricLoader;
 
 import java.io.IOException;
@@ -17,6 +18,7 @@ public final class TerrainDiffusionConfig {
     private static final boolean DEFAULT_VALIDATE_MODEL = true;
     private static final int DEFAULT_EXPLORER_PORT = 19801;
     private static final int DEFAULT_TILE_SIZE = 256;
+    private static final int DEFAULT_WORLD_SCALE = 2;
 
     static {
         loadDefaults();
@@ -73,6 +75,15 @@ public final class TerrainDiffusionConfig {
             return DEFAULT_TILE_SIZE;
         }
         return configuredTileSize;
+    }
+
+    public static int defaultScale() {
+        int configuredScale = readInt("default_scale", DEFAULT_WORLD_SCALE);
+        if (configuredScale < WorldScaleManager.MIN_SCALE || configuredScale > WorldScaleManager.MAX_SCALE) {
+            System.err.println("Invalid default_scale: " + configuredScale + ", using default " + DEFAULT_WORLD_SCALE);
+            return DEFAULT_WORLD_SCALE;
+        }
+        return configuredScale;
     }
 
     private static void loadDefaults() {
