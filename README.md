@@ -94,7 +94,7 @@ This value is saved with the world save and affects:
 
 **A dynamic link library (DLL) initialization routine failed**
 
-This can happen for some older Java versions. Please update to the most recent version of Java 21 or higher. The [latest Microsoft OpenJDK 21](https://learn.microsoft.com/en-us/java/openjdk/download) version is known to work.
+This can happen for some older Java versions. Please update to the most recent version of Java 17 or higher. The [latest Microsoft OpenJDK 17](https://learn.microsoft.com/en-us/java/openjdk/download) version is known to work.
 
 **LoadLibrary failed with error 126** *(CUDA build only)*
 
