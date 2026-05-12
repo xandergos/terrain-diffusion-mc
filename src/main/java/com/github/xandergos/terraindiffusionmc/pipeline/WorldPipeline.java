@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,7 +73,7 @@ public final class WorldPipeline implements AutoCloseable {
     private volatile long seed;
 
     private final MemoryTileStore tileStore;
-    private final long cacheLimitBytes = 100L * 1024 * 1024;
+    private final long cacheLimitBytes = TerrainDiffusionConfig.pipelineCacheLimitBytes();
 
     final InfiniteTensor coarse;
     final InfiniteTensor latents;
