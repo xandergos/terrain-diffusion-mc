@@ -17,6 +17,16 @@ public final class TerrainDiffusionConfig {
     private static final boolean DEFAULT_VALIDATE_MODEL = true;
     private static final int DEFAULT_EXPLORER_PORT = 19801;
     private static final int DEFAULT_TILE_SIZE = 256;
+    /** Soft byte limit of each per-stage InfiniteTensor window cache (MB). 0 = unlimited. */
+    private static final int DEFAULT_PIPELINE_CACHE_LIMIT_MB = 100;
+    /** Heightmap region cache entries in LocalTerrainProvider. */
+    private static final int DEFAULT_HEIGHTMAP_CACHE_SIZE = 64;
+    /**
+     * CPU intra-op threads for ONNX Runtime sessions. 0 = ORT default ({@code availableProcessors()}).
+     * Benchmarking on a 32-thread Strix Halo found 16 threads optimal end-to-end; the default
+     * was 30-40% worse on coarse and 10-15% on decoder due to cache contention.
+     */
+    private static final int DEFAULT_CPU_INTRA_THREADS = 0;
 
     static {
         loadDefaults();
@@ -73,6 +83,41 @@ public final class TerrainDiffusionConfig {
             return DEFAULT_TILE_SIZE;
         }
         return configuredTileSize;
+    }
+
+    /**
+     * Per-stage InfiniteTensor cache limit in megabytes. Higher values keep more coarse/latent/decoder
+     * windows resident so revisiting nearby chunks doesn't re-run diffusion. Memory pressure scales
+     * roughly linearly with this value across the three pipeline stages.
+     */
+    public static long pipelineCacheLimitBytes() {
+        int mb = readInt("inference.cache_limit_mb", DEFAULT_PIPELINE_CACHE_LIMIT_MB);
+        if (mb < 0) {
+            System.err.println("Invalid inference.cache_limit_mb: " + mb + ", using default " + DEFAULT_PIPELINE_CACHE_LIMIT_MB);
+            mb = DEFAULT_PIPELINE_CACHE_LIMIT_MB;
+        }
+        if (mb == 0) return Long.MAX_VALUE;
+        return (long) mb * 1024L * 1024L;
+    }
+
+    /** Number of heightmap regions to keep cached in LocalTerrainProvider. */
+    public static int heightmapCacheSize() {
+        int n = readInt("inference.heightmap_cache_size", DEFAULT_HEIGHTMAP_CACHE_SIZE);
+        if (n < 1) {
+            System.err.println("Invalid inference.heightmap_cache_size: " + n + ", using default " + DEFAULT_HEIGHTMAP_CACHE_SIZE);
+            return DEFAULT_HEIGHTMAP_CACHE_SIZE;
+        }
+        return n;
+    }
+
+    /** CPU intra-op thread count for ONNX sessions. 0 = ORT default (all logical cores). */
+    public static int cpuIntraThreads() {
+        int n = readInt("inference.cpu_intra_threads", DEFAULT_CPU_INTRA_THREADS);
+        if (n < 0) {
+            System.err.println("Invalid inference.cpu_intra_threads: " + n + ", using default " + DEFAULT_CPU_INTRA_THREADS);
+            return DEFAULT_CPU_INTRA_THREADS;
+        }
+        return n;
     }
 
     private static void loadDefaults() {

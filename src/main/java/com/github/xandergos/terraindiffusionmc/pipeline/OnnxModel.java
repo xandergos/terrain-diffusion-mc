@@ -7,6 +7,7 @@ import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InputStream;
 import java.nio.FloatBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +37,20 @@ public final class OnnxModel implements AutoCloseable {
     private static final AtomicBoolean coremlWarnLoggedOnce = new AtomicBoolean(false);
     private static final AtomicBoolean cudaWarnLoggedOnce = new AtomicBoolean(false);
     private static final AtomicBoolean dmlWarnLoggedOnce = new AtomicBoolean(false);
+    private static final AtomicBoolean rocmWarnLoggedOnce = new AtomicBoolean(false);
     private static final AtomicBoolean noGpuWarnLoggedOnce = new AtomicBoolean(false);
+    private static final AtomicBoolean rocmPreloadAttempted = new AtomicBoolean(false);
+
+    /**
+     * Auditwheel-bundled rocm-smi shipped inside the onnxruntime-rocm Python wheel
+     * (and therefore inside our hybrid {@code libs/onnxruntime-rocm.jar}). Its filename
+     * carries a content hash from auditwheel, so it cannot be resolved via the normal
+     * ld.so search path even though Fedora ships a {@code librocm_smi64.so.1}: the SONAMEs
+     * differ. We pre-load it from the classpath into a tempdir so libonnxruntime_providers_rocm.so
+     * finds it by SONAME in ld.so's loaded-libraries cache.
+     */
+    private static final String ROCM_SMI_BUNDLED_NAME = "librocm_smi64-a53a9aba.so.7.7.60404";
+    private static final String ROCM_SMI_RESOURCE_PATH = "/ai/onnxruntime/native/linux-x64/" + ROCM_SMI_BUNDLED_NAME;
 
     // GPU slot: when offload_models=true, only one session is alive at a time.
     private static final Object GPU_SLOT_LOCK = new Object();
@@ -150,6 +164,7 @@ public final class OnnxModel implements AutoCloseable {
         if ("cpu".equals(TerrainDiffusionConfig.inferenceDevice())) {
             OrtSession.SessionOptions sessionOptions = new OrtSession.SessionOptions();
             sessionOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
+            applyCpuThreadingDefaults(sessionOptions);
             this.cpuSession = env.createSession(modelBytes, sessionOptions);
             this.gpuSession = null;
             setResolvedProviderOnce("CPU");
@@ -176,6 +191,21 @@ public final class OnnxModel implements AutoCloseable {
         this.gpuSession = null;
         LOG.info("ONNX model '{}' bytes cached in CPU RAM ({} KB) in {} ms",
                 name, modelBytes.length / 1024, System.currentTimeMillis() - startMillis);
+    }
+
+    /**
+     * Pin CPU intra-op threads to a value that empirically performs well on this
+     * U-Net workload. Unbounded thread counts (ORT's default {@code availableProcessors()})
+     * hurt throughput on systems with 24+ logical cores due to cache contention on the
+     * 2 GB base model. Override with {@code inference.cpu_intra_threads=N} in
+     * terrain-diffusion-mc.properties; 0 = unlimited (ORT default).
+     */
+    private static void applyCpuThreadingDefaults(OrtSession.SessionOptions sessionOptions) throws OrtException {
+        int configured = TerrainDiffusionConfig.cpuIntraThreads();
+        if (configured > 0) {
+            sessionOptions.setIntraOpNumThreads(configured);
+            sessionOptions.setInterOpNumThreads(1);
+        }
     }
 
     private void closeLoadedSessions() {
@@ -332,6 +362,20 @@ public final class OnnxModel implements AutoCloseable {
 
         if (!added) {
             try {
+                preloadBundledRocmSmiOnce();
+                opts.addROCM(0);
+                added = true;
+                setResolvedProviderOnce("ROCm");
+            } catch (Throwable t) {
+                if (rocmWarnLoggedOnce.compareAndSet(false, true)) {
+                    LOG.warn("ROCm not available: {} - {}. This is expected if you are not using the ROCm build.",
+                            t.getClass().getSimpleName(), t.getMessage());
+                }
+            }
+        }
+
+        if (!added) {
+            try {
                 // ENABLE_ON_SUBGRAPH: allow CoreML to handle partial graphs with CPU fallback
                 // for unsupported ops, maximising GPU utilisation without requiring full-graph support.
                 opts.addCoreML(EnumSet.of(CoreMLFlags.ENABLE_ON_SUBGRAPH));
@@ -346,7 +390,7 @@ public final class OnnxModel implements AutoCloseable {
         }
         if (gpuRequired && !added) {
             throw new OrtException(
-                    "inference.device=gpu but no GPU provider (CUDA, DirectML, CoreML) is available. " +
+                    "inference.device=gpu but no GPU provider (CUDA, DirectML, ROCm, CoreML) is available. " +
                     "Use the appropriate build for your platform or set inference.device=cpu.");
         }
         if (!added) {
@@ -354,6 +398,35 @@ public final class OnnxModel implements AutoCloseable {
             if (noGpuWarnLoggedOnce.compareAndSet(false, true)) {
                 LOG.warn("No GPU provider loaded. Check drivers and that the mod jar is the GPU build.");
             }
+        }
+    }
+
+    /**
+     * Extract the auditwheel-bundled rocm-smi shipped in onnxruntime-rocm.jar to a tempdir
+     * and {@link System#load} it so libonnxruntime_providers_rocm.so finds the dependency by
+     * SONAME in ld.so's loaded-libraries cache. Idempotent.
+     *
+     * <p>This is only required for the ROCm build variant; on other variants the resource
+     * is absent and we silently skip. Failures here are not fatal — the ROCm provider load
+     * will surface a clearer error if the .so is genuinely needed.
+     */
+    private static void preloadBundledRocmSmiOnce() {
+        if (!rocmPreloadAttempted.compareAndSet(false, true)) return;
+        try (InputStream in = OnnxModel.class.getResourceAsStream(ROCM_SMI_RESOURCE_PATH)) {
+            if (in == null) {
+                LOG.debug("ROCm-SMI bundled lib not found in classpath (resource {}); this is normal " +
+                        "for non-ROCm builds.", ROCM_SMI_RESOURCE_PATH);
+                return;
+            }
+            Path tmpDir = Files.createTempDirectory("td-rocm-preload-");
+            Path target = tmpDir.resolve(ROCM_SMI_BUNDLED_NAME);
+            Files.copy(in, target);
+            System.load(target.toAbsolutePath().toString());
+            LOG.info("Pre-loaded bundled {} from classpath ({} bytes)",
+                    ROCM_SMI_BUNDLED_NAME, Files.size(target));
+        } catch (Throwable t) {
+            LOG.warn("Failed to pre-load bundled ROCm-SMI ({}): {}. The ROCm provider may fail to load.",
+                    ROCM_SMI_BUNDLED_NAME, t.getMessage());
         }
     }
 
