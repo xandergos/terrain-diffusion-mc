@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc;
 
+import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
@@ -58,7 +59,12 @@ public class TerrainDiffusionMc implements ModInitializer {
     private static int executeExplore(CommandContext<ServerCommandSource> ctx) {
         try {
             int port = ExplorerServer.startIfNotRunning();
-            String url = "http://localhost:" + port;
+
+            // If the explorer is bound to 0.0.0.0, the clients probably need the external IP to connect to it
+            String address = TerrainDiffusionConfig.explorerAddress().equals("0.0.0.0")
+                    ? ExplorerServer.getPublicIp()
+                    : "localhost";
+            String url = "http://" + address + ":" + port;
             MutableText link = Text.literal(url)
                     .styled(s -> s.withClickEvent(new ClickEvent.OpenUrl(URI.create(url)))
                                   .withUnderline(true));

@@ -1,13 +1,14 @@
 package com.github.xandergos.terraindiffusionmc.world;
 
+import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import net.minecraft.server.world.ServerWorld;
 
 /**
  * Runtime access for world-scoped terrain scale.
  */
 public final class WorldScaleManager {
-    public static final int DEFAULT_SCALE = 2;
-    private static final int MIN_SCALE = 1;
+    public static final int DEFAULT_SCALE = TerrainDiffusionConfig.defaultScale();
+    public static final int MIN_SCALE = 1;
     public static final int MAX_SCALE = 6;
 
     private static volatile int currentScale = DEFAULT_SCALE;
@@ -19,7 +20,7 @@ public final class WorldScaleManager {
      * Loads or creates per-world scale settings and sets the active runtime value.
      *
      * <p>If the world has no explicit stored scale yet, this applies pending
-     * world-creation selection when present, otherwise falls back to {@value #DEFAULT_SCALE}.
+     * world-creation selection when present, otherwise falls back to the value set in terrain-diffusion-mc.properties.
      */
     public static void initializeForWorld(ServerWorld serverWorld) {
         WorldScaleSettingsState worldScaleSettingsState = serverWorld.getPersistentStateManager()

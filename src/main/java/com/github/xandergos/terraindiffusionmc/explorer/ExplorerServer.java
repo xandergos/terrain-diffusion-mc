@@ -13,12 +13,10 @@ import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URL;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +48,36 @@ public final class ExplorerServer {
 
     private ExplorerServer() {}
 
+    public static String getPublicIp() throws Exception {
+
+        String[] services = {
+                "http://checkip.amazonaws.com",
+                "https://api.ipify.org",
+                "https://icanhazip.com"
+        };
+
+        for (String service : services) {
+            try {
+                URL url = URI.create(service).toURL();
+
+                try (BufferedReader in = new BufferedReader(
+                        new InputStreamReader(url.openStream()))) {
+
+                    String ip = in.readLine();
+
+                    if (ip != null && !ip.isBlank()) {
+                        return ip.trim();
+                    }
+                }
+
+            } catch (Exception e) {
+                System.out.println("Failed to reach: " + service);
+            }
+        }
+
+        throw new Exception("All IP services failed.");
+    }
+
     // =========================================================================
     // Lifecycle
     // =========================================================================
@@ -60,7 +88,8 @@ public final class ExplorerServer {
     public static synchronized int startIfNotRunning() throws IOException {
         if (SERVER != null) return SERVER_PORT;
         int port = TerrainDiffusionConfig.explorerPort();
-        InetSocketAddress addr = new InetSocketAddress("127.0.0.1", port);
+        String address = TerrainDiffusionConfig.explorerAddress();
+        InetSocketAddress addr = new InetSocketAddress(address, port);
         HttpServer server = HttpServer.create(addr, 0);
         server.createContext("/", ExplorerServer::handleRoot);
         server.createContext("/api/status", ExplorerServer::handleStatus);
@@ -80,7 +109,7 @@ public final class ExplorerServer {
         server.start();
         SERVER = server;
         SERVER_PORT = port;
-        LOG.info("Terrain explorer started at http://127.0.0.1:{}", port);
+        LOG.info("Terrain explorer started at http://{}:{}", address, port);
         return port;
     }
 
