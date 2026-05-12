@@ -1,27 +1,34 @@
-# Terrain Diffusion Fabric Mod
+# Terrain Diffusion Mod [[Modrinth]](https://modrinth.com/mod/terrain-diffusion)
 
-This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
+#### UPDATE: The research behind this mod has been accepted to SIGGRAPH 2026, the world's premier graphics conference! That means the research was officially peer reviewed and recognized as a significant contribution to the field. Enjoy the mod!
+
+This is a Minecraft multiplateform mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
 
 ## Which version should I use?
 
 Three builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
 
+**The CPU build is slow unless you are on MacOS.**
 
 | Build                     | Supports                    | Setup required                          |
-| ------------------------- | --------------------------- | --------------------------------------- |
+|---------------------------| --------------------------- | --------------------------------------- |
 | **Windows** (recommended) | Windows with any modern GPU | None                                    |
 | **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
-| **CPU (Slow)**            | Everything                  | None                                    |
+| **CPU**                   | Everything else             | None                                    |
 
+> **Mac users:** the CPU build automatically uses CoreML for hardware acceleration on Apple Silicon. No extra setup is needed.
 
 Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer CUDA (may improve performance).
 
 ## Requirements
 
-- Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
 - Windows with a GPU OR Linux with an NVIDIA GPU is strongly recommended. CPU inference works but is very slow.
 - VRAM (GPU RAM) needed: 1.5GB
 - RAM needed: 2.5GB (May need to increase Minecraft's RAM allocation)
+
+One of the following:
+- Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
+- Minecraft with [Forge](https://files.minecraftforge.net/net/minecraftforge/forge/) installed
 
 ## Usage
 
@@ -30,6 +37,7 @@ Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer
 1. Download the mod jar from [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) for your Minecraft version and place it in your Minecraft `mods/` folder. Make sure the Minecraft version matches.
 2. Launch Minecraft, at least once online to download the models (~2.5GB).
 3. Create a world, and select the **Terrain Diffusion** world type. Click **Customize** to set the `World Scale` (see [Per-world settings](#per-world-settings) below).
+4. The mod will search for a land spawn point near the world origin automatically. If the area around (0, 0) is entirely ocean, it may take a moment to find land. Use `/td-explore` (see below) to scout the world further.
 
 ## Exploring the World
 
@@ -46,8 +54,8 @@ Edit `config/terrain-diffusion-mc.properties` (created automatically on first la
 
 # Inference device: "cpu", "gpu", or "auto" (try GPU first then fall back to CPU).
 # "gpu" uses DirectML on the -windows build, or CUDA on the -cuda build.
-# Defaults to "gpu" so startup fails loudly if GPU inference is expected but not detected.
-# Set to "cpu" if you do not have a supported GPU.
+# GPU builds default to "gpu" so startup fails loudly if no GPU is detected.
+# CPU build defaults to "auto": uses CoreML on macOS, otherwise CPU.
 inference.device=gpu
 
 # Offload inactive models from VRAM between pipeline stages.
@@ -61,6 +69,12 @@ validate_model=true
 
 # Port for the local terrain explorer web UI (/td-explore).
 explorer.port=19801
+
+# Spawn search: coarse-pixel region sizes for finding a land spawn near (0, 0).
+# Starts at initial_size x initial_size and expands by 8 each step up to max_size x max_size.
+# Each coarse pixel covers a large area (hundreds of blocks), so 16–128 is typically sufficient.
+spawn_search.initial_size=16
+spawn_search.max_size=128
 ```
 
 ### Per-world settings
@@ -80,7 +94,7 @@ This value is saved with the world save and affects:
 
 **A dynamic link library (DLL) initialization routine failed**
 
-This can happen for some older Java versions. Please update to the most recent version of Java 21 or higher. The [latest Microsoft OpenJDK 21](https://learn.microsoft.com/en-us/java/openjdk/download) version is known to work.
+This can happen for some older Java versions. Please update to the most recent version of Java 17 or higher. The [latest Microsoft OpenJDK 17](https://learn.microsoft.com/en-us/java/openjdk/download) version is known to work.
 
 **LoadLibrary failed with error 126** *(CUDA build only)*
 
@@ -99,24 +113,33 @@ An internet connection is required during the build to fetch the pinned model ma
 
 The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source. 
 
-Build for Windows (DirectML):
+Build all loaders for Windows (DirectML):
 ```
-./gradlew build -PuseDml=true
-```
-
-Build for CUDA:
-```
-./gradlew build -PuseCuda=true
+./gradlew buildDml
+# or: ./gradlew build -PuseDml=true
 ```
 
-Build for CPU:
+Build all loaders for CUDA:
 ```
-./gradlew build -PuseCpu=true
+./gradlew buildCuda
+# or: ./gradlew build -PuseCuda=true
 ```
 
-Build all:
+Build all loaders for CPU (also handles macOS/CoreML automatically):
 ```
-./gradelw buildAll
+./gradlew buildCpu
+# or: ./gradlew build -PuseCpu=true
+```
+
+Build every variant for Fabric and Forge:
+```
+./gradlew buildAll
+```
+
+You can also build one loader/variant directly, for example:
+```
+./gradlew :fabric:buildDml
+./gradlew :forge:buildCuda
 ```
 
 ### Building onnxruntime with DirectML

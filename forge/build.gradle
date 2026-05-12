@@ -1,0 +1,89 @@
+plugins {
+    id 'multiloader-loader'
+    id 'net.neoforged.moddev.legacyforge'
+}
+
+mixin {
+    add(sourceSets.main, "${mod_id}.refmap.json")
+
+    config("${mod_id}.mixins.json")
+    config("${mod_id}.client.mixins.json")
+    config("${mod_id}.forge.mixins.json")
+}
+
+legacyForge {
+    version = "${minecraft_version}-${forge_version}"
+
+    validateAccessTransformers = true
+
+    def at = project(':common').file('src/main/resources/META-INF/accesstransformer.cfg')
+    if (at.exists()) {
+        accessTransformers = [at.absolutePath]
+    }
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
+    }
+    runs {
+        client {
+            client()
+        }
+        data {
+            data()
+            programArguments.addAll '--mod', fml_mod_id, '--all', '--output', file('src/generated/resources/').absolutePath, '--existing', file('src/main/resources/').absolutePath
+        }
+        server {
+            server()
+        }
+    }
+
+    mods {
+        "${fml_mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+sourceSets.main.resources.srcDir 'src/generated/resources'
+
+def terrainDiffusionForgeBuildVariant = rootProject.ext.terrainDiffusionBuildVariant(project)
+def terrainDiffusionForgeOnnxNotation = rootProject.ext.terrainDiffusionOnnxNotation(terrainDiffusionForgeBuildVariant)
+
+dependencies {
+    annotationProcessor('org.spongepowered:mixin:0.8.5-SNAPSHOT:processor')
+
+    // Required by ModDevGradle/Forge 1.20.1 runs for external Java libraries.
+    // Without this, ModLauncher does not expose ai.onnxruntime.* at runtime.
+    additionalRuntimeClasspath terrainDiffusionForgeOnnxNotation
+
+    jarJar(implementation(terrainDiffusionForgeOnnxNotation))
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('jarJar')
+}
+
+jar {
+    finalizedBy('reobfJar')
+    manifest.attributes([
+            'MixinConfigs': "${mod_id}.mixins.json,${mod_id}.client.mixins.json,${mod_id}.forge.mixins.json"
+    ])
+}
+
+def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+['apiElements', 'runtimeElements', 'sourcesElements', 'javadocElements'].each { variant ->
+    configurations.named("$variant") {
+        attributes {
+            attribute(loaderAttribute, 'forge')
+        }
+    }
+}
+sourceSets.configureEach {
+    [it.compileClasspathConfigurationName, it.runtimeClasspathConfigurationName].each { variant ->
+        configurations.named("$variant") {
+            attributes {
+                attribute(loaderAttribute, 'forge')
+            }
+        }
+    }
+}
