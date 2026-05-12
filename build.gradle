@@ -10,20 +10,21 @@ import java.security.MessageDigest
 def useCuda = project.hasProperty('useCuda') && project.property('useCuda').toString().toLowerCase() == 'true'
 def useDml = project.hasProperty('useDml') && project.property('useDml').toString().toLowerCase() == 'true'
 def useCpu = project.hasProperty('useCpu') && project.property('useCpu').toString().toLowerCase() == 'true'
+def useRocm = project.hasProperty('useRocm') && project.property('useRocm').toString().toLowerCase() == 'true'
 def withSourcesJar = project.hasProperty('withSourcesJar') && project.property('withSourcesJar').toString().toLowerCase() == 'true'
 
-if ([useCuda, useDml, useCpu].count { it } > 1) {
-    throw new GradleException("Only one of -PuseCuda, -PuseDml, or -PuseCpu may be specified at a time.")
+if ([useCuda, useDml, useCpu, useRocm].count { it } > 1) {
+    throw new GradleException("Only one of -PuseCuda, -PuseDml, -PuseCpu, or -PuseRocm may be specified at a time.")
 }
-if (!useDml && !useCpu && !useCuda) useDml = true
+if (!useDml && !useCpu && !useCuda && !useRocm) useDml = true
 
-println "Build variant: ${useCuda ? 'CUDA' : useDml ? 'DirectML (Windows)' : 'CPU'}"
+println "Build variant: ${useCuda ? 'CUDA' : useDml ? 'DirectML (Windows)' : useRocm ? 'ROCm (AMD Linux)' : 'CPU'}"
 def modelRepositorySlug = 'xandergos/terrain-diffusion-30m-onnx'
 def modelRepositoryRevision = 'ad2df557eca5645f588766101cf3bc3682455c3e'
 def generatedManifestDirectory = layout.buildDirectory.dir('generated/model-assets').get().asFile
 def generatedManifestFile = new File(generatedManifestDirectory, 'model-assets-manifest.json')
 
-def buildVariant = useCuda ? 'cuda' : useDml ? 'windows' : 'cpu'
+def buildVariant = useCuda ? 'cuda' : useDml ? 'windows' : useRocm ? 'rocm' : 'cpu'
 version = "${project.mod_version}-${buildVariant}+${project.minecraft_version}"
 group = project.maven_group
 
@@ -80,6 +81,12 @@ dependencies {
     } else if (useDml) {
         implementation 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
         include 'com.microsoft.onnxruntime:onnxruntime-dml:1.0'
+    } else if (useRocm) {
+        // ROCm build: ships our locally-assembled onnxruntime-rocm.jar (Maven 1.21.0 Java
+        // bindings + JNI compiled with -DUSE_ROCM + the ROCm-built libonnxruntime.so and
+        // libonnxruntime_providers_rocm.so from AMD's Python wheel). See ROCM_INSTALL.md.
+        implementation files('libs/onnxruntime-rocm.jar')
+        include files('libs/onnxruntime-rocm.jar')
     }
 }
 
@@ -221,7 +228,7 @@ tasks.register('generateModelAssetManifest') {
 def isWindows = System.getProperty('os.name').toLowerCase().startsWith('windows')
 def gradlewExecutable = rootProject.file(isWindows ? 'gradlew.bat' : 'gradlew').absolutePath
 
-['Cuda', 'Dml', 'Cpu'].each { variant ->
+['Cuda', 'Dml', 'Cpu', 'Rocm'].each { variant ->
     tasks.register("build${variant}", Exec) {
         workingDir rootProject.projectDir
         commandLine gradlewExecutable, 'build', "-Puse${variant}=true"
@@ -229,7 +236,7 @@ def gradlewExecutable = rootProject.file(isWindows ? 'gradlew.bat' : 'gradlew').
 }
 
 tasks.register('buildAll') {
-    dependsOn 'buildCuda', 'buildDml', 'buildCpu'
+    dependsOn 'buildCuda', 'buildDml', 'buildCpu', 'buildRocm'
 }
 
 String sha256Hex(byte[] fileBytes) {

@@ -6,19 +6,20 @@ This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.co
 
 ## Which version should I use?
 
-Three builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
+Four builds are available on the [Releases](https://github.com/xandergos/terrain-diffusion-mc/releases) page:
 
 **The CPU build is slow unless you are on MacOS.**
 
-| Build                     | Supports                    | Setup required                          |
-|---------------------------| --------------------------- | --------------------------------------- |
-| **Windows** (recommended) | Windows with any modern GPU | None                                    |
-| **CUDA**                  | NVIDIA GPUs                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
-| **CPU**                   | Everything else             | None                                    |
+| Build                     | Supports                                    | Setup required                          |
+|---------------------------|---------------------------------------------|-----------------------------------------|
+| **Windows** (recommended) | Windows with any modern GPU                 | None                                    |
+| **CUDA**                  | NVIDIA GPUs                                 | [CUDA + cuDNN install](CUDA_INSTALL.md) |
+| **ROCm**                  | AMD GPUs / APUs on Linux (RDNA2 and newer)  | [ROCm install](ROCM_INSTALL.md)         |
+| **CPU**                   | Everything else                             | None                                    |
 
 > **Mac users:** the CPU build automatically uses CoreML for hardware acceleration on Apple Silicon. No extra setup is needed.
 
-Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer CUDA (may improve performance).
+Use the `-cuda` build only if you are on Linux with an NVIDIA GPU. Use the `-rocm` build for AMD GPUs / iGPUs on Linux — benchmarks on a Strix Halo (Ryzen AI Max+ 395, gfx1151) show roughly 7× speedup over the CPU build.
 
 ## Requirements
 
@@ -123,6 +124,11 @@ Build for CUDA:
 Build for CPU (also handles macOS/CoreML automatically):
 ```
 ./gradlew build -PuseCpu=true
+```
+
+Build for ROCm (AMD Linux): requires `libs/onnxruntime-rocm.jar`. The repo ships a script that assembles this jar from upstream sources (Maven CPU jar + AMD's Python wheel + locally-recompiled JNI shim); see [`ROCM_INSTALL.md`](ROCM_INSTALL.md) for details.
+```
+./gradlew build -PuseRocm=true
 ```
 
 Build all:
