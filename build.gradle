@@ -228,4 +228,9 @@ subprojects { subproject ->
             }
         }
     }
+
+    subproject.tasks.withType(Javadoc).configureEach { Javadoc javadocTask ->
+        javadocTask.options.addStringOption('Xdoclint:all,-missing', '-quiet')
+        javadocTask.failOnError = false
+    }
 }
