@@ -1,8 +1,8 @@
-# Terrain Diffusion Fabric Mod [[Modrinth]](https://modrinth.com/mod/terrain-diffusion)
+# Terrain Diffusion Mod [[Modrinth]](https://modrinth.com/mod/terrain-diffusion)
 
 #### UPDATE: The research behind this mod has been accepted to SIGGRAPH 2026, the world's premier graphics conference! That means the research was officially peer reviewed and recognized as a significant contribution to the field. Enjoy the mod!
 
-This is a Minecraft Fabric mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
+This is a Minecraft multiplateform mod integrating [Terrain Diffusion](https://github.com/xandergos/terrain-diffusion).
 
 ## Which version should I use?
 
@@ -22,10 +22,14 @@ Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer
 
 ## Requirements
 
-- Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
 - Windows with a GPU OR Linux with an NVIDIA GPU is strongly recommended. CPU inference works but is very slow.
 - VRAM (GPU RAM) needed: 1.5GB
 - RAM needed: 2.5GB (May need to increase Minecraft's RAM allocation)
+
+One of the following:
+- Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed 
+- Minecraft with [Forge](https://files.minecraftforge.net/net/minecraftforge/forge/) installed
+- Minecraft with [NeoFoge](https://neoforged.net/) installed
 
 ## Usage
 
