@@ -3,12 +3,20 @@ plugins {
     id 'fabric-loom' version '1.13-SNAPSHOT' apply false
     // see https://projects.neoforged.net/neoforged/moddevgradle for new versions
     id 'net.neoforged.moddev' version '2.0.123' apply false
-    id 'net.minecraftforge.gradle' version '[6.0.46,6.2)' apply false
     id 'org.spongepowered.mixin' version '0.7-SNAPSHOT' apply false
 }
 
 ext {
-    terrainDiffusionLoaderProjects = ['fabric', 'forge', 'neoforge']
+    terrainDiffusionLoaderProjects = ['fabric', 'neoforge']
+    terrainDiffusionLoaderDisplayNames = [
+            fabric  : 'Fabric',
+            neoforge: 'NeoForge'
+    ]
+    terrainDiffusionBuildVariants = [
+            windows: [taskSuffix: 'Windows', propertyName: 'useDml', legacyTaskSuffix: 'Dml', displayName: 'Windows', runtimeName: 'DirectML'],
+            cuda   : [taskSuffix: 'Cuda', propertyName: 'useCuda', displayName: 'CUDA', runtimeName: 'CUDA'],
+            cpu    : [taskSuffix: 'Cpu', propertyName: 'useCpu', displayName: 'CPU', runtimeName: 'CPU/CoreML']
+    ]
     terrainDiffusionOnnxRuntimeVersion = '1.20.0'
     terrainDiffusionOnnxDmlVersion = '1.0'
     terrainDiffusionLocalDmlMavenRepo = rootProject.file('.gradle/terrain-diffusion-local-maven')
@@ -88,41 +96,129 @@ def terrainDiffusionGradlewExecutable = providers.provider {
     rootProject.file(System.getProperty('os.name').toLowerCase().startsWith('windows') ? 'gradlew.bat' : 'gradlew').absolutePath
 }
 
+def terrainDiffusionBuildTaskGroup = 'terrain diffusion'
+
 def terrainDiffusionLoaderTaskPath = { String loaderName -> ":${loaderName}:build" }
+def terrainDiffusionVariantPropertyFlag = { Map variant -> "-P${variant.propertyName}=true" }
+def terrainDiffusionCleanTaskName = { String value -> value.replaceAll(/[^A-Za-z0-9]/, '') }
 
-tasks.register('buildCpu', Exec) {
-    group = 'build'
-    description = 'Builds Fabric, Forge, and NeoForge CPU jars.'
-    workingDir rootProject.projectDir
-    commandLine terrainDiffusionGradlewExecutable.get(), 'build', '-PuseCpu=true'
+def terrainDiffusionRegisterBuildExec = { Project ownerProject, String taskName, List<String> gradleTasks, Map variant, String descriptionText ->
+    ownerProject.tasks.register(taskName, Exec) {
+        group = terrainDiffusionBuildTaskGroup
+        description = descriptionText
+        workingDir rootProject.projectDir
+        commandLine(([terrainDiffusionGradlewExecutable.get()] + gradleTasks + [terrainDiffusionVariantPropertyFlag(variant)]) as List<String>)
+    }
 }
 
-tasks.register('buildCuda', Exec) {
-    group = 'build'
-    description = 'Builds Fabric, Forge, and NeoForge CUDA jars.'
-    workingDir rootProject.projectDir
-    commandLine terrainDiffusionGradlewExecutable.get(), 'build', '-PuseCuda=true'
+def terrainDiffusionRegisterAlias = { Project ownerProject, String aliasName, String targetName, String descriptionText ->
+    ownerProject.tasks.register(aliasName) {
+        group = terrainDiffusionBuildTaskGroup
+        description = descriptionText
+        dependsOn targetName
+    }
 }
 
-tasks.register('buildDml', Exec) {
-    group = 'build'
-    description = 'Builds Fabric, Forge, and NeoForge DirectML/Windows jars.'
-    workingDir rootProject.projectDir
-    commandLine terrainDiffusionGradlewExecutable.get(), 'build', '-PuseDml=true'
+rootProject.ext.terrainDiffusionBuildVariants.each { String variantKey, Map variant ->
+    terrainDiffusionRegisterBuildExec(
+            rootProject,
+            "build${variant.taskSuffix}",
+            ['build'],
+            variant,
+            "Builds Fabric and NeoForge ${variant.displayName} jars."
+    )
+
+    if (variant.legacyTaskSuffix && variant.legacyTaskSuffix != variant.taskSuffix) {
+        terrainDiffusionRegisterAlias(
+                rootProject,
+                "build${variant.legacyTaskSuffix}",
+                "build${variant.taskSuffix}",
+                "Compatibility alias for build${variant.taskSuffix}."
+        )
+    }
+}
+
+rootProject.ext.terrainDiffusionLoaderProjects.each { String loaderName ->
+    String loaderDisplayName = rootProject.ext.terrainDiffusionLoaderDisplayNames[loaderName] ?: loaderName.capitalize()
+    String loaderTaskNamePart = terrainDiffusionCleanTaskName(loaderDisplayName)
+    List<String> loaderVariantTaskNames = []
+
+    rootProject.ext.terrainDiffusionBuildVariants.each { String variantKey, Map variant ->
+        String variantTaskName = "build${loaderTaskNamePart}${variant.taskSuffix}"
+        loaderVariantTaskNames << variantTaskName
+
+        terrainDiffusionRegisterBuildExec(
+                rootProject,
+                variantTaskName,
+                [terrainDiffusionLoaderTaskPath(loaderName)],
+                variant,
+                "Builds the ${loaderDisplayName} ${variant.displayName} jar."
+        )
+
+        if (variant.legacyTaskSuffix && variant.legacyTaskSuffix != variant.taskSuffix) {
+            terrainDiffusionRegisterAlias(
+                    rootProject,
+                    "build${loaderTaskNamePart}${variant.legacyTaskSuffix}",
+                    variantTaskName,
+                    "Compatibility alias for ${variantTaskName}."
+            )
+        }
+    }
+
+    tasks.register("build${loaderTaskNamePart}All") {
+        group = terrainDiffusionBuildTaskGroup
+        description = "Builds every ${loaderDisplayName} variant."
+        dependsOn loaderVariantTaskNames
+    }
 }
 
 tasks.named('buildCuda') { mustRunAfter rootProject.tasks.named('buildCpu') }
-tasks.named('buildDml') { mustRunAfter rootProject.tasks.named('buildCuda') }
+tasks.named('buildWindows') { mustRunAfter rootProject.tasks.named('buildCuda') }
+['Fabric', 'NeoForge'].each { loaderTaskNamePart ->
+    tasks.named("build${loaderTaskNamePart}Cuda") { mustRunAfter rootProject.tasks.named("build${loaderTaskNamePart}Cpu") }
+    tasks.named("build${loaderTaskNamePart}Windows") { mustRunAfter rootProject.tasks.named("build${loaderTaskNamePart}Cuda") }
+}
+
+tasks.register('buildAllVariants') {
+    group = terrainDiffusionBuildTaskGroup
+    description = 'Builds CPU, CUDA, and Windows variants for Fabric and NeoForge.'
+    dependsOn rootProject.ext.terrainDiffusionLoaderProjects.collect { String loaderName ->
+        String loaderDisplayName = rootProject.ext.terrainDiffusionLoaderDisplayNames[loaderName] ?: loaderName.capitalize()
+        "build${terrainDiffusionCleanTaskName(loaderDisplayName)}All"
+    }
+}
 
 tasks.register('buildAll') {
-    group = 'build'
-    description = 'Builds CPU, CUDA, and DirectML/Windows variants for all loaders.'
-    dependsOn 'buildCpu', 'buildCuda', 'buildDml'
+    group = terrainDiffusionBuildTaskGroup
+    description = 'Compatibility alias for buildAllVariants.'
+    dependsOn 'buildAllVariants'
+}
+
+tasks.register('buildRelease') {
+    group = terrainDiffusionBuildTaskGroup
+    description = 'Builds every release jar for Fabric and NeoForge.'
+    dependsOn 'buildAllVariants'
+}
+
+tasks.register('collectReleaseJars', Copy) {
+    group = terrainDiffusionBuildTaskGroup
+    description = 'Builds every release jar and copies the distributable jars to build/release/<loader>.'
+    dependsOn 'buildRelease'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    into layout.buildDirectory.dir('release')
+
+    rootProject.ext.terrainDiffusionLoaderProjects.each { String loaderName ->
+        from(rootProject.file("${loaderName}/build/libs")) {
+            include '*.jar'
+            exclude '*-sources.jar', '*-javadoc.jar', '*-dev.jar'
+            into loaderName
+        }
+    }
 }
 
 subprojects { subproject ->
     subproject.plugins.withType(org.gradle.api.plugins.JavaPlugin).configureEach {
-        subproject.extensions.configure(org.gradle.api.plugins.JavaPluginExtension) { org.gradle.api.plugins.JavaPluginExtension javaExtension ->
+        subproject.extensions.configure(org.gradle.api.plugins.JavaPluginExtension) { JavaPluginExtension javaExtension ->
             def javaVersion = JavaVersion.toVersion(terrainDiffusionJavaVersion)
             javaExtension.sourceCompatibility = javaVersion
             javaExtension.targetCompatibility = javaVersion
@@ -138,16 +234,15 @@ subprojects { subproject ->
     subproject.plugins.withId('multiloader-loader') {
         String buildVariant = rootProject.ext.terrainDiffusionBuildVariant(subproject)
         subproject.ext.terrainDiffusionBuildVariant = buildVariant
-        subproject.version = "${rootProject.version}-${buildVariant}+${subproject.minecraft_version}"
+        subproject.version = "${rootProject.mod_version}-${buildVariant}+${subproject.minecraft_version}"
         subproject.group = rootProject.group
 
         def loaderArchivePrefix = [
                 fabric  : 'Fabric',
-                forge   : 'Forge',
                 neoforge: 'NeoForge'
         ][subproject.name] ?: subproject.name.capitalize()
 
-        subproject.extensions.configure(org.gradle.api.plugins.BasePluginExtension) { org.gradle.api.plugins.BasePluginExtension baseExtension ->
+        subproject.extensions.configure(org.gradle.api.plugins.BasePluginExtension) { BasePluginExtension baseExtension ->
             baseExtension.archivesName = "${loaderArchivePrefix}-${rootProject.archives_base_name}"
         }
 
@@ -155,7 +250,6 @@ subprojects { subproject ->
             maven { name = 'TerrainDiffusionLocalDml'; url = uri(rootProject.ext.terrainDiffusionLocalDmlMavenUrl()) }
             mavenCentral()
             maven { name = 'Fabric'; url = uri('https://maven.fabricmc.net') }
-            maven { name = 'Forge'; url = uri('https://maven.minecraftforge.net') }
             maven { name = 'NeoForge'; url = uri('https://maven.neoforged.net/releases') }
             maven { name = 'ParchmentMC'; url = uri('https://maven.parchmentmc.org') }
             flatDir { dirs rootProject.file('libs') }
@@ -165,22 +259,42 @@ subprojects { subproject ->
             implementation rootProject.ext.terrainDiffusionOnnxNotation(buildVariant)
         }
 
-        ['Cpu', 'Cuda', 'Dml'].each { variantName ->
-            subproject.tasks.register("build${variantName}", Exec) {
-                group = 'build'
-                description = "Builds the ${subproject.name} ${variantName} jar."
-                workingDir rootProject.projectDir
-                commandLine terrainDiffusionGradlewExecutable.get(), terrainDiffusionLoaderTaskPath(subproject.name), "-Puse${variantName}=true"
+        List<String> variantTaskNames = []
+        rootProject.ext.terrainDiffusionBuildVariants.each { String variantKey, Map variant ->
+            String variantTaskName = "build${variant.taskSuffix}"
+            variantTaskNames << variantTaskName
+
+            terrainDiffusionRegisterBuildExec(
+                    subproject,
+                    variantTaskName,
+                    [terrainDiffusionLoaderTaskPath(subproject.name)],
+                    variant,
+                    "Builds the ${subproject.name} ${variant.displayName} jar."
+            )
+
+            if (variant.legacyTaskSuffix && variant.legacyTaskSuffix != variant.taskSuffix) {
+                terrainDiffusionRegisterAlias(
+                        subproject,
+                        "build${variant.legacyTaskSuffix}",
+                        variantTaskName,
+                        "Compatibility alias for build${variant.taskSuffix}."
+                )
             }
         }
 
         subproject.tasks.named('buildCuda') { mustRunAfter subproject.tasks.named('buildCpu') }
-        subproject.tasks.named('buildDml') { mustRunAfter subproject.tasks.named('buildCuda') }
+        subproject.tasks.named('buildWindows') { mustRunAfter subproject.tasks.named('buildCuda') }
+
+        subproject.tasks.register('buildAllVariants') {
+            group = terrainDiffusionBuildTaskGroup
+            description = "Builds CPU, CUDA, and Windows variants for ${subproject.name}."
+            dependsOn variantTaskNames
+        }
 
         subproject.tasks.register('buildAll') {
-            group = 'build'
-            description = "Builds CPU, CUDA, and DirectML/Windows variants for ${subproject.name}."
-            dependsOn 'buildCpu', 'buildCuda', 'buildDml'
+            group = terrainDiffusionBuildTaskGroup
+            description = 'Compatibility alias for buildAllVariants.'
+            dependsOn 'buildAllVariants'
         }
     }
 
@@ -190,23 +304,6 @@ subprojects { subproject ->
                 String buildVariant = subproject.ext.terrainDiffusionBuildVariant
                 include rootProject.ext.terrainDiffusionOnnxNotation(buildVariant)
             }
-        }
-    }
-
-    subproject.plugins.withId('net.minecraftforge.gradle') {
-        def forgeJarJar = subproject.extensions.getByName('jarJar')
-        forgeJarJar.enable()
-
-        subproject.dependencies {
-            String buildVariant = subproject.ext.terrainDiffusionBuildVariant
-            def onnxModule = rootProject.ext.terrainDiffusionOnnxModule(buildVariant)
-            jarJar(group: onnxModule.group, name: onnxModule.name, version: "[${onnxModule.version}]") {
-                forgeJarJar.pin(it, onnxModule.version)
-            }
-        }
-
-        subproject.tasks.named('build') {
-            dependsOn subproject.tasks.named('jarJar')
         }
     }
 
