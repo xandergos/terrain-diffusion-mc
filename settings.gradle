@@ -29,17 +29,6 @@ pluginManagement {
         exclusiveContent {
             forRepository {
                 maven {
-                    name = 'Forge'
-                    url = uri('https://maven.minecraftforge.net')
-                }
-            }
-            filter {
-                includeGroupAndSubgroups('net.minecraftforge')
-            }
-        }
-        exclusiveContent {
-            forRepository {
-                maven {
                     name = 'NeoForge'
                     url = uri('https://maven.neoforged.net/releases')
                 }
@@ -59,4 +48,3 @@ rootProject.name = 'terrain-diffusion-mc'
 include('common')
 include('fabric')
 include('neoforge')
-include('forge')

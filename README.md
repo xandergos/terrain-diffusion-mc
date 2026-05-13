@@ -28,8 +28,7 @@ Use the `-cuda` build only if you are on Linux, or have an NVIDIA GPU and prefer
 
 One of the following:
 - Minecraft with [Fabric](https://fabricmc.net/) and the [Fabric API Mod](https://modrinth.com/mod/fabric-api) installed
-- Minecraft with [Forge](https://files.minecraftforge.net/net/minecraftforge/forge/) installed
-- Minecraft with [NeoFoge](https://neoforged.net/) installed
+- Minecraft with [NeoForge](https://neoforged.net/) installed
 
 ## Usage
 
@@ -112,36 +111,59 @@ Terrain Diffusion's models take up about 2.5GB of RAM, so make sure to allocate 
 
 An internet connection is required during the build to fetch the pinned model manifest metadata from Hugging Face.
 
-The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source. 
+The `-windows` build requires `libs/onnxruntime-dml.jar`, which is provided as part of the repo. See [Building onnxruntime with DirectML](#building-onnxruntime-with-directml) to build from source.
 
-Build all loaders for Windows (DirectML):
+### Build task layout
+
+Use `Windows` in commands when you want the DirectML build. The old `Dml` task names still work as aliases, but the readable names are preferred.
+
+| What you want | Command |
+|---------------|---------|
+| Fabric + NeoForge, Windows/DirectML | `./gradlew buildWindows` |
+| Fabric + NeoForge, CUDA | `./gradlew buildCuda` |
+| Fabric + NeoForge, CPU/CoreML | `./gradlew buildCpu` |
+| Every loader and every variant | `./gradlew buildRelease` |
+| Every loader/variant, copied into `build/release/` | `./gradlew collectReleaseJars` |
+| Fabric only, Windows/DirectML | `./gradlew buildFabricWindows` |
+| Fabric only, CUDA | `./gradlew buildFabricCuda` |
+| Fabric only, CPU/CoreML | `./gradlew buildFabricCpu` |
+| Every Fabric variant | `./gradlew buildFabricAll` |
+| NeoForge only, Windows/DirectML | `./gradlew buildNeoForgeWindows` |
+| NeoForge only, CUDA | `./gradlew buildNeoForgeCuda` |
+| NeoForge only, CPU/CoreML | `./gradlew buildNeoForgeCpu` |
+| Every NeoForge variant | `./gradlew buildNeoForgeAll` |
+
+Equivalent direct Gradle property calls still work:
+
+```
+./gradlew build -PuseDml=true
+./gradlew build -PuseCuda=true
+./gradlew build -PuseCpu=true
+./gradlew :fabric:build -PuseDml=true
+./gradlew :neoforge:build -PuseDml=true
+```
+
+Compatibility aliases kept for existing scripts:
+
 ```
 ./gradlew buildDml
-# or: ./gradlew build -PuseDml=true
-```
-
-Build all loaders for CUDA:
-```
-./gradlew buildCuda
-# or: ./gradlew build -PuseCuda=true
-```
-
-Build all loaders for CPU (also handles macOS/CoreML automatically):
-```
-./gradlew buildCpu
-# or: ./gradlew build -PuseCpu=true
-```
-
-Build every variant for Fabric, Forge, and NeoForge:
-```
+./gradlew buildFabricDml
+./gradlew buildNeoForgeDml
 ./gradlew buildAll
 ```
 
-You can also build one loader/variant directly, for example:
+Final jars are written under each loader module:
+
 ```
-./gradlew :fabric:buildDml
-./gradlew :forge:buildCuda
-./gradlew :neoforge:buildCpu
+fabric/build/libs/
+neoforge/build/libs/
+```
+
+For release packaging, use `./gradlew collectReleaseJars`. It copies the distributable jars into:
+
+```
+build/release/fabric/
+build/release/neoforge/
 ```
 
 ### Building onnxruntime with DirectML
