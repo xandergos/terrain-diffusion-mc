@@ -1,0 +1,119 @@
+plugins {
+    id 'multiloader-common'
+}
+
+sourceSets {
+    main {
+        java.srcDir project(':common').file('src/main/java')
+        resources.srcDir project(':common').file('src/main/resources')
+    }
+}
+
+// Fabric uses Loom's splitEnvironmentSourceSets() and wires common client code into
+// sourceSets.client from fabric/build.gradle. NeoForge does not split client
+// classes by default, so it must compile/package the common client mixins from main.
+if (project.name != 'fabric') {
+    sourceSets {
+        main {
+            java.srcDir project(':common').file('src/client/java')
+            resources.srcDir project(':common').file('src/client/resources')
+        }
+    }
+}
+
+def terrainDiffusionBuildVariant = {
+    return project.ext.has('terrainDiffusionBuildVariant')
+            ? project.ext.terrainDiffusionBuildVariant
+            : rootProject.ext.terrainDiffusionBuildVariant(project)
+}
+
+def modelRepositorySlug = 'xandergos/terrain-diffusion-30m-onnx'
+def modelRepositoryRevision = 'ad2df557eca5645f588766101cf3bc3682455c3e'
+def generatedManifestFile = layout.buildDirectory.file('generated/model-assets/model-assets-manifest.json')
+
+tasks.register('generateModelAssetManifest') {
+    inputs.property('modelRepositorySlug', modelRepositorySlug)
+    inputs.property('modelRepositoryRevision', modelRepositoryRevision)
+    outputs.file(generatedManifestFile)
+
+    doLast {
+        File manifestFile = generatedManifestFile.get().asFile
+        manifestFile.parentFile.mkdirs()
+
+        String apiUrl = "https://huggingface.co/api/models/${modelRepositorySlug}/revision/${modelRepositoryRevision}?blobs=true"
+        Map modelInfo = new groovy.json.JsonSlurper().parseText(new URL(apiUrl).getText('UTF-8')) as Map
+        List siblings = modelInfo.siblings as List
+
+        List<String> requiredFiles = [
+                'base_model.onnx',
+                'coarse_model.onnx',
+                'decoder_model.onnx',
+                'pipeline_data.json',
+                'world_pipeline_config.json'
+        ]
+
+        Map<String, Object> assetEntries = [:]
+        for (String requiredFileName : requiredFiles) {
+            Map siblingEntry = siblings.find { it.rfilename == requiredFileName } as Map
+            if (siblingEntry == null) {
+                throw new GradleException("Required model asset missing from HF commit ${modelRepositoryRevision}: ${requiredFileName}")
+            }
+
+            String resolveUrl = "https://huggingface.co/${modelRepositorySlug}/resolve/${modelRepositoryRevision}/${requiredFileName}?download=true"
+            long expectedSizeBytes = ((Number) siblingEntry.size).longValue()
+            String expectedSha256
+            if (siblingEntry.lfs instanceof Map && siblingEntry.lfs.sha256 != null) {
+                expectedSha256 = siblingEntry.lfs.sha256 as String
+            } else {
+                byte[] remoteFileBytes = new URL(resolveUrl).bytes
+                expectedSha256 = terrainDiffusionSha256Hex(remoteFileBytes)
+            }
+
+            assetEntries[requiredFileName] = [
+                    sha256  : expectedSha256,
+                    sizeBytes: expectedSizeBytes,
+                    url     : resolveUrl
+            ]
+        }
+
+        Map<String, Object> manifestPayload = [
+                repositorySlug: modelRepositorySlug,
+                revision      : modelRepositoryRevision,
+                assets        : assetEntries
+        ]
+        manifestFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(manifestPayload))
+    }
+}
+
+processResources {
+    dependsOn tasks.named('generateModelAssetManifest')
+    inputs.property('terrain_diffusion_build_variant', terrainDiffusionBuildVariant())
+    from(generatedManifestFile) {
+        into ''
+    }
+    filesMatching('build-variant.properties') {
+        expand 'build_variant': terrainDiffusionBuildVariant()
+    }
+}
+
+dependencies {
+    compileOnly(project(':common')) {
+        capabilities {
+            requireCapability "$group:$mod_id"
+        }
+        def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+        attributes {
+            attribute(loaderAttribute, 'common')
+        }
+    }
+}
+
+String terrainDiffusionSha256Hex(byte[] fileBytes) {
+    java.security.MessageDigest messageDigest = java.security.MessageDigest.getInstance('SHA-256')
+    byte[] digestBytes = messageDigest.digest(fileBytes)
+    StringBuilder hexBuilder = new StringBuilder(digestBytes.length * 2)
+    for (byte digestByte : digestBytes) {
+        hexBuilder.append(String.format('%02x', digestByte))
+    }
+    return hexBuilder.toString()
+}

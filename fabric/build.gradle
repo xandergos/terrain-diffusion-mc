@@ -1,0 +1,148 @@
+plugins {
+    id 'multiloader-loader'
+    id 'fabric-loom'
+    id 'maven-publish'
+}
+
+def buildVariant = project.ext.terrainDiffusionBuildVariant
+
+loom {
+    def aw = project(':common').file("src/main/resources/${mod_id}.accesswidener")
+    if (aw.exists()) {
+        accessWidenerPath.set(aw)
+    }
+
+    splitEnvironmentSourceSets()
+
+    mods {
+        "terrain-diffusion-mc" {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+
+    mixin {
+        defaultRefmapName.set("${mod_id}.refmap.json")
+    }
+
+    runs {
+        configureEach {
+            ideConfigGenerated true
+        }
+        client {
+            client()
+            setConfigName('Fabric Client')
+            runDir('runs/client')
+        }
+        server {
+            server()
+            setConfigName('Fabric Server')
+            runDir('runs/server')
+        }
+    }
+}
+
+sourceSets {
+    main {
+        java {
+            // Guard against stale files left by extracting older migration zips over the same working tree.
+            // Fabric's main source set cannot compile net.minecraft.client classes when splitEnvironmentSourceSets() is enabled.
+            exclude 'com/github/xandergos/terraindiffusionmc/client/**'
+            exclude 'com/github/xandergos/terraindiffusionmc/mixin/client/**'
+        }
+    }
+    client {
+        java.srcDir project(':common').file('src/client/java')
+        resources.srcDir project(':common').file('src/client/resources')
+    }
+}
+
+fabricApi {
+    configureDataGeneration {
+        client = true
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.layered {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-${project.parchment_minecraft}:${project.parchment_version}@zip")
+    }
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'minecraft_version', project.minecraft_version
+    inputs.property 'loader_version', project.fabric_loader_version
+    inputs.property 'build_variant', buildVariant
+    filteringCharset 'UTF-8'
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version,
+                'minecraft_version': project.minecraft_version,
+                'loader_version': project.fabric_loader_version
+    }
+    filesMatching('build-variant.properties') {
+        expand 'build_variant': buildVariant
+    }
+}
+
+
+jar {
+    def licenseFile = rootProject.file('LICENSE.txt')
+    if (!licenseFile.exists()) licenseFile = rootProject.file('LICENSE')
+    if (licenseFile.exists()) {
+        from(licenseFile) {
+            rename { "${it}_${project.archivesBaseName}" }
+        }
+    }
+}
+
+tasks.withType(JavaExec).configureEach {
+    systemProperty 'log4j2.configurationFile', rootProject.file('log4j2-dev.xml').absolutePath
+}
+
+publishing {
+    publications {
+        named('mavenJava', MavenPublication) {
+            artifactId = project.archives_base_name
+        }
+    }
+    repositories {
+    }
+}
+
+tasks.register('pipelineTest', JavaExec) {
+    dependsOn compileJava
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.github.xandergos.terraindiffusionmc.pipeline.PipelineTest'
+    jvmArgs '-Xmx8g'
+}
+
+// Implement mcgradleconventions loader attribute
+def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', String)
+['apiElements', 'runtimeElements', 'sourcesElements', 'javadocElements', 'includeInternal', 'modCompileClasspath'].each { variant ->
+    configurations.named("$variant") {
+        attributes {
+            attribute(loaderAttribute, 'fabric')
+        }
+    }
+}
+sourceSets.configureEach {
+    [it.compileClasspathConfigurationName, it.runtimeClasspathConfigurationName].each { variant->
+        configurations.named("$variant") {
+            attributes {
+                attribute(loaderAttribute, 'fabric')
+            }
+        }
+    }
+}
+loom.remapConfigurations.configureEach {
+    configurations.named(it.name) {
+        attributes {
+            attribute(loaderAttribute, 'fabric')
+        }
+    }
+}
