@@ -9,17 +9,8 @@ sourceSets {
     }
 }
 
-// Fabric uses Loom's splitEnvironmentSourceSets() and wires common client code into
-// sourceSets.client from fabric/build.gradle. NeoForge does not split client
-// classes by default, so it must compile/package the common client mixins from main.
-if (project.name != 'fabric') {
-    sourceSets {
-        main {
-            java.srcDir project(':common').file('src/client/java')
-            resources.srcDir project(':common').file('src/client/resources')
-        }
-    }
-}
+// Loader modules wire common client-only code into their own client source set.
+// Keep it out of main so dedicated-server builds do not compile against net.minecraft.client.*.
 
 def terrainDiffusionBuildVariant = {
     return project.ext.has('terrainDiffusionBuildVariant')

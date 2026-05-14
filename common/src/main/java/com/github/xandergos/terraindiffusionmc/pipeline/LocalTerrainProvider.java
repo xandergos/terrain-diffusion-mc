@@ -1,6 +1,7 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
+import com.github.xandergos.terraindiffusionmc.debug.TerrainBaseTile;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,13 +60,14 @@ public final class LocalTerrainProvider {
     }
 
     private static record CacheKey(int i1, int j1, int i2, int j2) {}
-    private static record CacheEntry(HeightmapData data, AtomicLong lastAccessed) {}
+    private static record CacheEntry(HeightmapData data, TerrainBaseTile debugTile, AtomicLong lastAccessed) {}
+    private static record GeneratedTerrainTile(HeightmapData data, TerrainBaseTile debugTile) {}
 
     private static final int MAX_CACHE_SIZE = 64;
     private static final int MAX_CACHE_SIZE_HEADROOM = 8;
     private static final Map<CacheKey, CacheEntry> CACHE = new ConcurrentHashMap<>();
     private static final AtomicLong CACHE_CLOCK = new AtomicLong();
-    private static final Map<CacheKey, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
+    private static final Map<CacheKey, Future<GeneratedTerrainTile>> PENDING = new ConcurrentHashMap<>();
     /** Single thread for pipeline.get() so MemoryTileStore is not accessed concurrently. */
     private static final ExecutorService INFERENCE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "terrain-diffusion-inference");
@@ -98,6 +100,10 @@ public final class LocalTerrainProvider {
             CACHE.clear();
             PENDING.clear();
         }
+    }
+
+    public static boolean isInitialized() {
+        return INSTANCE != null;
     }
 
     public static LocalTerrainProvider getInstance() {
@@ -184,19 +190,35 @@ public final class LocalTerrainProvider {
         CacheKey key = new CacheKey(i1, j1, i2, j2);
         CacheEntry cached = CACHE.get(key);
         if (cached != null) {
-            cached.lastAccessed.set(CACHE_CLOCK.incrementAndGet());
-            return cached.data;
+            cached.lastAccessed().set(CACHE_CLOCK.incrementAndGet());
+            return cached.data();
         }
 
-        return this.genHeightmap(key, i1, j1, i2, j2);
+        return this.genTerrainTile(key, i1, j1, i2, j2).data();
     }
 
-    private HeightmapData genHeightmap(CacheKey key, int i1, int j1, int i2, int j2) {
+    /**
+     * Fetch the debug clone of the terrain tile generated for the same block-coordinate region.
+     *
+     * <p>This may block while the terrain pipeline runs. Do not call it from the client render thread.</p>
+     */
+    public TerrainBaseTile fetchTerrainBaseTile(int i1, int j1, int i2, int j2) {
+        CacheKey key = new CacheKey(i1, j1, i2, j2);
+        CacheEntry cached = CACHE.get(key);
+        if (cached != null) {
+            cached.lastAccessed().set(CACHE_CLOCK.incrementAndGet());
+            return cached.debugTile();
+        }
+
+        return this.genTerrainTile(key, i1, j1, i2, j2).debugTile();
+    }
+
+    private GeneratedTerrainTile genTerrainTile(CacheKey key, int i1, int j1, int i2, int j2) {
         int scale = WorldScaleManager.getCurrentScale();
-        FutureTask<HeightmapData> task = new FutureTask<>(() -> {
+        FutureTask<GeneratedTerrainTile> task = new FutureTask<>(() -> {
             long computedWindowCountBefore = pipeline.getTotalComputedWindowCount();
-            HeightmapData data = scale <= 1
-                    ? handle1x(i1, j1, i2, j2)
+            GeneratedTerrainTile generatedTile = scale <= 1
+                    ? handle1x(i1, j1, i2, j2, scale)
                     : handleUpsampled(i1, j1, i2, j2, scale);
             long computedWindowCountAfter = pipeline.getTotalComputedWindowCount();
 
@@ -206,23 +228,23 @@ public final class LocalTerrainProvider {
             LOG.info(
                     "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
                     OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
-            CACHE.put(key, new CacheEntry(data, new AtomicLong(CACHE_CLOCK.incrementAndGet())));
+            CACHE.put(key, new CacheEntry(generatedTile.data(), generatedTile.debugTile(), new AtomicLong(CACHE_CLOCK.incrementAndGet())));
             evictLruTo(MAX_CACHE_SIZE);
             PENDING.remove(key);
-            return data;
+            return generatedTile;
         });
-        Future<HeightmapData> existing = PENDING.putIfAbsent(key, task);
-        FutureTask<HeightmapData> toRun = (existing == null) ? task : (FutureTask<HeightmapData>) existing;
+        Future<GeneratedTerrainTile> existing = PENDING.putIfAbsent(key, task);
+        Future<GeneratedTerrainTile> toWaitFor = existing == null ? task : existing;
         if (existing == null) {
             int regionWidth = j2 - j1;
             int regionHeight = i2 - i1;
             LOG.info(
                     "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{}",
                     OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight);
-            INFERENCE_EXECUTOR.submit(toRun);
+            INFERENCE_EXECUTOR.submit(task);
         }
         try {
-            return toRun.get();
+            return toWaitFor.get();
         } catch (Exception e) {
             PENDING.remove(key);
             throw new RuntimeException("Terrain tile failed: " + key, e);
@@ -233,7 +255,7 @@ public final class LocalTerrainProvider {
         int headroomHalf = MAX_CACHE_SIZE_HEADROOM / 2;
         if (CACHE.size() > maxSize + headroomHalf) {
             CACHE.entrySet().stream()
-                .sorted(Comparator.comparingLong(e -> e.getValue().lastAccessed.get()))
+                .sorted(Comparator.comparingLong(e -> e.getValue().lastAccessed().get()))
                 .limit(MAX_CACHE_SIZE_HEADROOM)
                 .map(Map.Entry::getKey)
                 .forEach(CACHE::remove);
@@ -244,7 +266,7 @@ public final class LocalTerrainProvider {
     // Scale == 1: block coords == native pixel coords
     // =========================================================================
 
-    private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
+    private GeneratedTerrainTile handle1x(int i1, int j1, int i2, int j2, int scale) {
         int H = i2 - i1, W = j2 - j1;
 
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
@@ -253,14 +275,25 @@ public final class LocalTerrainProvider {
         float[] climate  = out[1];
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
-        return buildHeightmapData(elevFlat, biomeFlat, H, W);
+        HeightmapData data = buildHeightmapData(elevFlat, biomeFlat, H, W);
+        TerrainBaseTile debugTile = TerrainBaseTile.fromFlatArrays(
+                j1,
+                i1,
+                W,
+                H,
+                scale,
+                elevFlat,
+                elevFlat,
+                biomeFlat
+        );
+        return new GeneratedTerrainTile(data, debugTile);
     }
 
     // =========================================================================
     // Scale > 1: pipeline at native res → bilinear upsample to block res
     // =========================================================================
 
-    private HeightmapData handleUpsampled(int i1, int j1, int i2, int j2, int scale) {
+    private GeneratedTerrainTile handleUpsampled(int i1, int j1, int i2, int j2, int scale) {
         int H = i2 - i1, W = j2 - j1;
         float pixelSizeM = NATIVE_RESOLUTION / scale;
 
@@ -299,7 +332,18 @@ public final class LocalTerrainProvider {
         float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
 
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
-        return buildHeightmapData(elevOut, biomeFlat, H, W);
+        HeightmapData data = buildHeightmapData(elevOut, biomeFlat, H, W);
+        TerrainBaseTile debugTile = TerrainBaseTile.fromFlatArrays(
+                j1,
+                i1,
+                W,
+                H,
+                scale,
+                elevSmooth,
+                elevOut,
+                biomeFlat
+        );
+        return new GeneratedTerrainTile(data, debugTile);
     }
 
     // =========================================================================

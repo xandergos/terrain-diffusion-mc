@@ -3,6 +3,24 @@ plugins {
     id 'net.neoforged.moddev'
 }
 
+sourceSets {
+    main {
+        java {
+            // Guard against stale files left by extracting older migration zips over the same working tree.
+            // NeoForge's main source set must not compile net.minecraft.client classes.
+            exclude 'com/github/xandergos/terraindiffusionmc/client/**'
+            exclude 'com/github/xandergos/terraindiffusionmc/mixin/client/**'
+        }
+        resources { srcDir 'src/generated/resources' }
+    }
+    client {
+        java.srcDir project(':common').file('src/client/java')
+        resources.srcDir project(':common').file('src/client/resources')
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
 neoForge {
     version = neoforge_version
     // Automatically enable neoforge AccessTransformers if the file exists
@@ -36,12 +54,10 @@ neoForge {
     mods {
         "${fml_mod_id}" {
             sourceSet sourceSets.main
+            sourceSet sourceSets.client
         }
     }
 }
-
-sourceSets.main.resources { srcDir 'src/generated/resources' }
-
 
 
 // Implement mcgradleconventions loader attribute
@@ -54,9 +70,10 @@ def loaderAttribute = Attribute.of('io.github.mcgradleconventions.loader', Strin
     }
 }
 sourceSets.configureEach {
-    [it.compileClasspathConfigurationName, it.runtimeClasspathConfigurationName, it.getTaskName(null, 'jarJar')].each { variant->
-        configurations.named("$variant") {
-            attributes {
+    [it.compileClasspathConfigurationName, it.runtimeClasspathConfigurationName, it.getTaskName(null, 'jarJar')].each { variant ->
+        def configuration = configurations.findByName(variant)
+        if (configuration != null) {
+            configuration.attributes {
                 attribute(loaderAttribute, 'neoforge')
             }
         }
