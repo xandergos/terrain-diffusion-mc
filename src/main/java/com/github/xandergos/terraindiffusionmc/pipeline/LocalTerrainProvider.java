@@ -42,32 +42,15 @@ public final class LocalTerrainProvider {
         return fnl;
     }
 
-    public static class NoiseChannels {
-        public float[][] erosion;
-        public float[][] continents;
-        public float[][] temperature;
-        public float[][] vegetation;
-        public float[][] depth;
-
-        public float erosion(int x, int z) { return erosion[z][x]; }
-        public float continents(int x, int z) { return continents[z][x]; }
-        public float temperature(int x, int z) { return temperature[z][x]; }
-        public float vegetation(int x, int z) { return vegetation[z][x]; }
-        public float depth(int x, int z) { return depth[z][x]; }
-    }
-
     public static final class HeightmapData {
         public final short[][] heightmap;
+        public final float[] climate;
         public final int width;
         public final int height;
 
-        public NoiseChannels noiseChannels;
-
-        public HeightmapData(short[][] heightmap, float[] climateFlat, int width, int height) {
+        public HeightmapData(short[][] heightmap, float[] climate, int width, int height) {
             this.heightmap = heightmap;
-            noiseChannels = climateFlat == null
-                    ? null
-                    : getInstance().buildNoiseChannels(climateFlat, width, height);
+            this.climate = climate;
             this.width     = width;
             this.height    = height;
         }
@@ -264,8 +247,9 @@ public final class LocalTerrainProvider {
 
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
         float[][] out = pipeline.get(i1, j1, i2, j2, true);
+
         float[] elevFlat = out[0];
-        float[] climate  = out[1];
+        float[] climate = out[1];
 
         return buildHeightmapData(elevFlat, climate, H, W);
     }
@@ -291,11 +275,14 @@ public final class LocalTerrainProvider {
 
         float[][] out = pipeline.get(i1p, j1p, i2p, j2p, true);
         float[] elevNativeFlat    = out[0];
-        float[] climateNativeFlat = out[1];
+        float[] climateNativeFlat    = out[1];
 
         // Bilinear upsample elevation: (nH, nW) → (nH*scale, nW*scale)
         float[][] elevNative2D = to2D(elevNativeFlat, nH, nW);
         float[][] elevUp = LaplacianUtils.bilinearResize(elevNative2D, nH * scale, nW * scale);
+
+        float[][] climate2D = to2D(climateNativeFlat, nH, nW);
+        float[][] climateUp = LaplacianUtils.bilinearResize(climate2D, nH * scale, nW * scale);
 
         // Crop offsets in the upsampled array
         int padUp   = 2 * scale;
@@ -307,12 +294,10 @@ public final class LocalTerrainProvider {
         float[] elevSmooth = cropFlat(elevUp, cropI1,     cropJ1,     H,   W,   nH * scale, nW * scale);
         float[] elevPadded = cropFlat(elevUp, cropI1 - 1, cropJ1 - 1, H+2, W+2, nH * scale, nW * scale);
 
-        // Upsample climate (4, nH, nW) → (4, H, W)
-        float[] climate = upsampleClimate(climateNativeFlat, nH, nW, cropI1, cropJ1, H, W, scale, nH * scale, nW * scale);
-
         float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
+        float[] climateOut = cropFlat(climateUp, cropI1, cropJ1, H, W, nH * scale, nW * scale);
 
-        return buildHeightmapData(elevOut, climate, H, W);
+        return buildHeightmapData(elevOut, climateOut, H, W);
     }
 
     // =========================================================================
@@ -398,77 +383,13 @@ public final class LocalTerrainProvider {
         return a;
     }
 
-    private NoiseChannels buildNoiseChannels(float[] climateFlat, int H, int W) {
-        NoiseChannels nc = new NoiseChannels();
-
-        nc.erosion = new float[H][W];
-        nc.continents = new float[H][W];
-        nc.temperature = new float[H][W];
-        nc.vegetation = new float[H][W];
-        nc.depth = new float[H][W];
-
-        int total = H * W;
-
-        if (climateFlat == null || climateFlat.length == 0) {
-            return nc;
-        }
-
-        // CASE A: full 5-channel packed tensor
-        if (climateFlat.length >= total * 5) {
-            for (int i = 0; i < total; i++) {
-                nc.erosion[i / W][i % W]     = climateFlat[i];
-                nc.continents[i / W][i % W]  = climateFlat[i + total];
-                nc.temperature[i / W][i % W] = climateFlat[i + 2 * total];
-                nc.vegetation[i / W][i % W]  = climateFlat[i + 3 * total];
-                nc.depth[i / W][i % W]       = climateFlat[i + 4 * total];
-            }
-            return nc;
-        }
-
-        // CASE B: single-channel climate (most likely your 262144 case)
-        if (climateFlat.length == total) {
-            for (int i = 0; i < total; i++) {
-                float v = climateFlat[i];
-
-                nc.erosion[i / W][i % W]     = v;
-                nc.continents[i / W][i % W]  = v * 0.73f + 0.11f;
-                nc.temperature[i / W][i % W] = v * 0.51f - 0.07f;
-                nc.vegetation[i / W][i % W]  = v * 0.29f + 0.23f;
-                nc.depth[i / W][i % W]       = v * 0.18f - 0.31f;
-            }
-            return nc;
-        }
-
-        // CASE C: partial/misaligned tensor → attempt best-effort reshape
-        if (climateFlat.length % total == 0) {
-            int stride = climateFlat.length / total;
-
-            for (int i = 0; i < total; i++) {
-                int base = i * stride;
-
-                nc.temperature[i / W][i % W] = climateFlat[base];
-                if (stride > 1) nc.continents[i / W][i % W] = climateFlat[base + 1];
-                if (stride > 2) nc.vegetation[i / W][i % W] = climateFlat[base + 2];
-                if (stride > 3) nc.depth[i / W][i % W]      = climateFlat[base + 3];
-                if (stride > 4) nc.erosion[i / W][i % W]    = climateFlat[base + 4];
-            }
-
-            return nc;
-        }
-
-        throw new IllegalStateException(
-                "Unrecognized climate format: " + climateFlat.length +
-                        " for grid " + total
-        );
-    }
-
-    private static HeightmapData buildHeightmapData(float[] elevFlat, float[] climateFlat, int H, int W) {
+    private static HeightmapData buildHeightmapData(float[] elevFlat, float[] climate, int H, int W) {
         short[][] heightmap = new short[H][W];
         for (int r = 0; r < H; r++)
             for (int c = 0; c < W; c++) {
                 float e = elevFlat[r * W + c];
                 heightmap[r][c] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
             }
-        return new HeightmapData(heightmap, climateFlat, W, H);
+        return new HeightmapData(heightmap, climate, W, H);
     }
 }

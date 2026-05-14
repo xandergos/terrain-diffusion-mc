@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.mojang.serialization.MapCodec;
 import net.minecraft.util.dynamic.CodecHolder;
 import net.minecraft.world.gen.densityfunction.DensityFunction;
@@ -7,8 +8,28 @@ import net.minecraft.world.gen.densityfunction.DensityFunction;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class PipelineNoiseFunction implements DensityFunction {
+public final class PipelineNoiseFunction implements DensityFunction {
     private final NoiseChannel channel;
+
+    private static final FastNoiseLite TEMP_NOISE, TEMP_NOISE_FINE;
+    private static final FastNoiseLite PRECIP_NOISE;
+
+    static {
+        TEMP_NOISE = makeFnl(12345, 1f/500f, 3, 2f, 0.5f);
+        TEMP_NOISE_FINE = makeFnl(54321, 1f/128f, 2, 2f, 0.5f);
+        PRECIP_NOISE = makeFnl(12345, 1f/500f, 5, 2f, 0.5f);
+    }
+
+    private static FastNoiseLite makeFnl(int seed, float freq, int oct, float lac, float gain) {
+        FastNoiseLite fnl = new FastNoiseLite(seed);
+        fnl.SetNoiseType(FastNoiseLite.NoiseType.Perlin);
+        fnl.SetFrequency(freq);
+        fnl.SetFractalType(FastNoiseLite.FractalType.FBm);
+        fnl.SetFractalOctaves(oct);
+        fnl.SetFractalLacunarity(lac);
+        fnl.SetFractalGain(gain);
+        return fnl;
+    }
 
     public enum NoiseChannel {
         EROSION,
@@ -16,20 +37,6 @@ public class PipelineNoiseFunction implements DensityFunction {
         TEMPERATURE,
         VEGETATION,
         DEPTH
-    }
-
-    private final Map<Long, LocalTerrainProvider.HeightmapData> cache = new ConcurrentHashMap<>();
-
-    public LocalTerrainProvider.HeightmapData get(int chunkX, int chunkZ) {
-        return cache.get(pack(chunkX, chunkZ));
-    }
-
-    public void put(int chunkX, int chunkZ, LocalTerrainProvider.HeightmapData data) {
-        cache.put(pack(chunkX, chunkZ), data);
-    }
-
-    private long pack(int x, int z) {
-        return ((long)x << 32) | (z & 0xffffffffL);
     }
 
     public PipelineNoiseFunction(NoiseChannel channel) {
@@ -40,39 +47,56 @@ public class PipelineNoiseFunction implements DensityFunction {
         return MapCodec.unit(() -> new PipelineNoiseFunction(channel));
     }
 
+    private final Map<Long, LocalTerrainProvider.HeightmapData> tileCache = new ConcurrentHashMap<>();
+
+    private long pack(int tileX, int tileZ, int tileSize) {
+        return (((long) tileX) << 32) | (tileZ & 0xffffffffL);
+    }
+
+    private LocalTerrainProvider.HeightmapData getTile(int tileX, int tileZ, int tileSize) {
+        long key = pack(tileX, tileZ, tileSize);
+
+        return tileCache.computeIfAbsent(key, k -> {
+            int startX = tileX * tileSize;
+            int startZ = tileZ * tileSize;
+
+            int endX = startX + tileSize;
+            int endZ = startZ + tileSize;
+
+            return LocalTerrainProvider.getInstance()
+                    .fetchHeightmap(startX, startZ, endX, endZ);
+        });
+    }
+
     @Override
     public double sample(NoisePos pos) {
         int x = pos.blockX();
         int z = pos.blockZ();
 
-        LocalTerrainProvider.HeightmapData data = get(x, z);
+        int tileSize = TerrainDiffusionConfig.tileSize();
+        int tileX = Math.floorDiv(x, tileSize);
+        int tileZ = Math.floorDiv(z, tileSize);
 
-        if (data == null) {
-            return fallback(channel);
-        }
+        int localX = Math.floorMod(x, tileSize);
+        int localZ = Math.floorMod(z, tileSize);
+
+        LocalTerrainProvider.HeightmapData data = getTile(tileX, tileZ, tileSize);
 
         return switch(channel) {
-            case EROSION -> data.noiseChannels.erosion(x, z);
-            case CONTINENTS -> data.noiseChannels.continents(x, z);
-            case TEMPERATURE -> data.noiseChannels.temperature(x, z);
-            case VEGETATION -> data.noiseChannels.vegetation(x, z);
-            case DEPTH -> data.noiseChannels.depth(x, z);
-        };
-    }
-
-    private double fallback(NoiseChannel channel) {
-        return switch (channel) {
-            case CONTINENTS -> 0.0;
-            case TEMPERATURE -> 0.5;
             case EROSION -> 0.0;
-            case VEGETATION -> 0.5;
-            case DEPTH -> 0.0;
+            case CONTINENTS -> 0.5;
+            case TEMPERATURE -> computeTemperature(x, z, localX, localZ, data);
+            case VEGETATION -> computeVegetation(x, z, localX, localZ, data);
+            case DEPTH -> -0.2;
         };
     }
 
     @Override
     public void fill(double[] densities, EachApplier applier) {
-
+        for (int i = 0; i < densities.length; i++) {
+            NoisePos pos = applier.at(i);
+            sample(pos);
+        }
     }
 
     @Override
@@ -93,5 +117,37 @@ public class PipelineNoiseFunction implements DensityFunction {
     @Override
     public CodecHolder<? extends DensityFunction> getCodecHolder() {
         return null;
+    }
+
+    private double computeTemperature(int globalX, int globalZ, int localX, int localZ, LocalTerrainProvider.HeightmapData data) {
+        int idx = localZ * data.width + localX;
+
+        float baseTemp = data.climate[idx];
+
+        float coarse = TEMP_NOISE.GetNoise(globalX, globalZ);
+        float fine   = TEMP_NOISE_FINE.GetNoise(globalX, globalZ);
+
+        float tempNoise = 0.4f * coarse + 0.2f * fine;
+
+        return baseTemp + tempNoise;
+    }
+
+    private double computeVegetation(int globalX, int globalZ, int localX, int localZ, LocalTerrainProvider.HeightmapData data) {
+        float temp = (float) computeTemperature(globalX, globalZ, localX, localZ, data);
+
+        float pn = PRECIP_NOISE.GetNoise(globalX, globalZ);
+        float precipFactor = 1.0f + 0.2f * pn;
+
+        float moistureBase = 1.0f - Math.max(0f, (temp - 10f) / 40f);
+        float aridity = precipFactor * moistureBase;
+
+        aridity = Math.max(0f, Math.min(1.5f, aridity));
+
+        float vegetation =
+                aridity * (0.6f + 0.4f * Math.max(0f, 1f - Math.abs(temp - 15f) / 30f));
+
+        float micro = 0.05f * TEMP_NOISE_FINE.GetNoise(globalX, globalZ);
+
+        return vegetation + micro;
     }
 }

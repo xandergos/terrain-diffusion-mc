@@ -89,70 +89,24 @@
     },
     "ridges": "minecraft:overworld/ridges",
     "depth": {
-      "type": "lithostitched:mix",
-      "target": "depth",
-      "input": "minecraft:overworld/depth",
-      "argument1": "minecraft:overworld/depth",
-      "argument2": {
-        "type": "terrain-diffusion-mc:noise_depth",
-        "channel": "DEPTH"
-      }
+      "type": "terrain-diffusion-mc:noise_depth",
+      "channel": "DEPTH"
     },
     "erosion": {
-      "type": "lithostitched:mix",
-      "target": "erosion",
-      "input": "minecraft:overworld/depth",
-      "argument1": "minecraft:overworld/erosion",
-      "argument2": {
-        "type": "terrain-diffusion-mc:noise_erosion",
-        "channel": "EROSION"
-      }
+      "type": "terrain-diffusion-mc:noise_erosion",
+      "channel": "EROSION"
     },
     "continents": {
-      "type": "lithostitched:mix",
-      "target": "continents",
-      "input": 0.7,
-      "argument1": "minecraft:overworld/continents",
-      "argument2": {
-        "type": "terrain-diffusion-mc:noise_continents",
-        "channel": "CONTINENTS"
-      }
+      "type": "terrain-diffusion-mc:noise_continents",
+      "channel": "CONTINENTS"
     },
     "vegetation": {
-      "type": "lithostitched:mix",
-      "target": "vegetation",
-      "input": "minecraft:overworld/depth",
-      "argument1": {
-        "type": "minecraft:shifted_noise",
-        "noise": "minecraft:vegetation",
-        "shift_x": "minecraft:shift_x",
-        "shift_y": 0.0,
-        "shift_z": "minecraft:shift_z",
-        "xz_scale": 0.15,
-        "y_scale": 0.0
-      },
-      "argument2": {
-        "type": "terrain-diffusion-mc:noise_vegetation",
-        "channel": "VEGETATION"
-      }
+      "type": "terrain-diffusion-mc:noise_vegetation",
+      "channel": "VEGETATION"
     },
     "temperature": {
-      "type": "lithostitched:mix",
-      "target": "temperature",
-      "input": "minecraft:overworld/depth",
-      "argument1": {
-        "type": "minecraft:shifted_noise",
-        "noise": "minecraft:temperature",
-        "shift_x": "minecraft:shift_x",
-        "shift_y": 0.0,
-        "shift_z": "minecraft:shift_z",
-        "xz_scale": 0.15,
-        "y_scale": 0.0
-      },
-      "argument2": {
-        "type": "terrain-diffusion-mc:noise_temperature",
-        "channel": "TEMPERATURE"
-      }
+      "type": "terrain-diffusion-mc:noise_temperature",
+      "channel": "TEMPERATURE"
     },
     "lava": {
       "type": "minecraft:noise",
