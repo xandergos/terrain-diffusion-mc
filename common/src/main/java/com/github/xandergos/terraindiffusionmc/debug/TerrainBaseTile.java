@@ -21,6 +21,7 @@ public record TerrainBaseTile(
         short[] baseMeters,
         short[] generatedMeters,
         short[] biomeIds,
+        short[] precipitationMm,
         int[] baseY,
         int[] generatedY
 ) {
@@ -29,6 +30,7 @@ public record TerrainBaseTile(
         if (baseMeters.length != expectedLength
                 || generatedMeters.length != expectedLength
                 || biomeIds.length != expectedLength
+                || precipitationMm.length != expectedLength
                 || baseY.length != expectedLength
                 || generatedY.length != expectedLength) {
             throw new IllegalArgumentException("All tile arrays must have width * height elements");
@@ -74,6 +76,10 @@ public record TerrainBaseTile(
         return biomeIds[index(localX, localZ)];
     }
 
+    public short precipitationMmAtLocal(int localX, int localZ) {
+        return precipitationMm[index(localX, localZ)];
+    }
+
     public int deltaYAtLocal(int localX, int localZ) {
         int idx = index(localX, localZ);
         return generatedY[idx] - baseY[idx];
@@ -87,16 +93,18 @@ public record TerrainBaseTile(
             int configuredScale,
             float[] baseMetersFloat,
             float[] generatedMetersFloat,
-            short[] biomeIds
+            short[] biomeIds,
+            short[] precipitationMm
     ) {
         int len = width * height;
-        if (baseMetersFloat.length != len || generatedMetersFloat.length != len || biomeIds.length != len) {
+        if (baseMetersFloat.length != len || generatedMetersFloat.length != len || biomeIds.length != len || precipitationMm.length != len) {
             throw new IllegalArgumentException("Input arrays must have width * height elements");
         }
 
         short[] baseMeters = new short[len];
         short[] generatedMeters = new short[len];
         short[] biomeIdsCopy = biomeIds.clone();
+        short[] precipitationMmCopy = precipitationMm.clone();
         int[] baseY = new int[len];
         int[] generatedY = new int[len];
 
@@ -119,6 +127,7 @@ public record TerrainBaseTile(
                 baseMeters,
                 generatedMeters,
                 biomeIdsCopy,
+                precipitationMmCopy,
                 baseY,
                 generatedY
         );

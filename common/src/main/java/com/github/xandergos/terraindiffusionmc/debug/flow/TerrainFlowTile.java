@@ -6,17 +6,24 @@ public record TerrainFlowTile(
         int width,
         int height,
         int[] surfaceY,
+        short[] biomeIds,
+        short[] precipitationMm,
         byte[] initialDirection,
         byte[] direction,
+        byte[] costDirection,
         float[] dropMeters,
         float[] uphillMeters,
         float[] selectedCost,
+        float[] costDrop,
         float[] score,
         boolean[] sink,
         float[] accumulationPreview,
         float[] accumulationFinal,
         float[] convergenceBonus,
         boolean[] changedByConvergence,
+        float[] directionAlignment,
+        float[] riverShapeScore,
+        float[] missingRiverCostSignal,
         float maxAccumulationPreview,
         float maxAccumulationFinal
 ) {
@@ -29,17 +36,24 @@ public record TerrainFlowTile(
     public TerrainFlowTile {
         int expectedLength = width * height;
         if (surfaceY.length != expectedLength
+                || biomeIds.length != expectedLength
+                || precipitationMm.length != expectedLength
                 || initialDirection.length != expectedLength
                 || direction.length != expectedLength
+                || costDirection.length != expectedLength
                 || dropMeters.length != expectedLength
                 || uphillMeters.length != expectedLength
                 || selectedCost.length != expectedLength
+                || costDrop.length != expectedLength
                 || score.length != expectedLength
                 || sink.length != expectedLength
                 || accumulationPreview.length != expectedLength
                 || accumulationFinal.length != expectedLength
                 || convergenceBonus.length != expectedLength
-                || changedByConvergence.length != expectedLength) {
+                || changedByConvergence.length != expectedLength
+                || directionAlignment.length != expectedLength
+                || riverShapeScore.length != expectedLength
+                || missingRiverCostSignal.length != expectedLength) {
             throw new IllegalArgumentException("All flow tile arrays must have width * height elements");
         }
     }
@@ -52,12 +66,24 @@ public record TerrainFlowTile(
         return surfaceY[index(localX, localZ)];
     }
 
+    public short biomeAtLocal(int localX, int localZ) {
+        return biomeIds[index(localX, localZ)];
+    }
+
+    public short precipitationMmAtLocal(int localX, int localZ) {
+        return precipitationMm[index(localX, localZ)];
+    }
+
     public byte initialDirectionAt(int localX, int localZ) {
         return initialDirection[index(localX, localZ)];
     }
 
     public byte directionAt(int localX, int localZ) {
         return direction[index(localX, localZ)];
+    }
+
+    public byte costDirectionAt(int localX, int localZ) {
+        return costDirection[index(localX, localZ)];
     }
 
     public boolean isSinkAt(int localX, int localZ) {
@@ -74,6 +100,10 @@ public record TerrainFlowTile(
 
     public float selectedCostAt(int localX, int localZ) {
         return selectedCost[index(localX, localZ)];
+    }
+
+    public float costDropAt(int localX, int localZ) {
+        return costDrop[index(localX, localZ)];
     }
 
     public float scoreAt(int localX, int localZ) {
@@ -98,6 +128,18 @@ public record TerrainFlowTile(
 
     public boolean changedByConvergenceAt(int localX, int localZ) {
         return changedByConvergence[index(localX, localZ)];
+    }
+
+    public float directionAlignmentAt(int localX, int localZ) {
+        return directionAlignment[index(localX, localZ)];
+    }
+
+    public float riverShapeScoreAt(int localX, int localZ) {
+        return riverShapeScore[index(localX, localZ)];
+    }
+
+    public float missingRiverCostSignalAt(int localX, int localZ) {
+        return missingRiverCostSignal[index(localX, localZ)];
     }
 
     public boolean isRiverPreviewAt(int localX, int localZ) {

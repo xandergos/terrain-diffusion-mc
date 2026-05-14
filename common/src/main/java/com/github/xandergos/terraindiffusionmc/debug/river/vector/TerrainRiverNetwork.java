@@ -38,6 +38,7 @@ public record TerrainRiverNetwork(
             int surfaceY,
             float accumulation,
             float widthBlocks,
+            float depthBlocks,
             byte direction
     ) {
     }

@@ -52,6 +52,35 @@ public final class TerrainFlowConfig {
     public static final float MIN_CONVERGENCE_GAIN_FOR_CHANGE = 0.18F;
 
     /**
+     * Tiny cost differences are visual noise. Cost direction is only meaningful above this delta.
+     */
+    public static final float MIN_COST_DROP = 0.008F;
+
+    /**
+     * Cost drop where the cost field strongly agrees with a valley/channel decision.
+     */
+    public static final float STRONG_COST_DROP = 0.18F;
+
+    /**
+     * Flow drop range used by the hydro/cost shaping diagnostics.
+     */
+    public static final float RIVER_SHAPE_DROP_START_METERS = 0.20F;
+    public static final float RIVER_SHAPE_DROP_END_METERS = 2.50F;
+
+    /**
+     * Accumulation range used by the hydro/cost shaping diagnostics.
+     */
+    public static final float RIVER_SHAPE_LOG_START = 0.56F;
+    public static final float RIVER_SHAPE_LOG_END = 0.86F;
+
+    /**
+     * Debug extraction thresholds. These are intentionally softer than the old river preview;
+     * the new score requires accumulation + drop + cost agreement instead of accumulation alone.
+     */
+    public static final float RIVER_SHAPE_SCORE_THRESHOLD = 0.22F;
+    public static final float MISSING_RIVER_COST_THRESHOLD = 0.46F;
+
+    /**
      * Do not preview rivers from tiny one-cell or short local flows.
      */
     public static final float RIVER_PREVIEW_MIN_ACCUMULATION = 32.0F;

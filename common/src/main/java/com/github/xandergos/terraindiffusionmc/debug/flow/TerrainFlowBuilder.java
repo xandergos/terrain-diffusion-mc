@@ -9,6 +9,10 @@ import java.util.Queue;
 public final class TerrainFlowBuilder {
     private static final int[] DIR_X = {0, 1, 1, 1, 0, -1, -1, -1};
     private static final int[] DIR_Z = {-1, -1, 0, 1, 1, 1, 0, -1};
+    private static final float SQRT_2 = 1.41421356237F;
+    private static final float[] DIR_LENGTH = {1.0F, SQRT_2, 1.0F, SQRT_2, 1.0F, SQRT_2, 1.0F, SQRT_2};
+    private static final float SHAPE_SIGNAL_SMOOTHING_BLEND = 0.45F;
+
 
     private TerrainFlowBuilder() {
     }
@@ -70,21 +74,30 @@ public final class TerrainFlowBuilder {
             }
         }
 
-        computeAccumulation(finalDirection, sourceWidth, sourceHeight, finalAccumulation);
+        float maxAccumulationFinalExpanded = computeAccumulation(finalDirection, sourceWidth, sourceHeight, finalAccumulation);
 
         int len = width * height;
         int[] surfaceY = new int[len];
+        short[] biomeIds = new short[len];
+        short[] precipitationMm = new short[len];
         byte[] initialDirection = new byte[len];
         byte[] direction = new byte[len];
+        byte[] costDirection = new byte[len];
         float[] dropMeters = new float[len];
         float[] uphillMeters = new float[len];
         float[] selectedCost = new float[len];
+        float[] costDrop = new float[len];
         float[] score = new float[len];
         boolean[] sink = new boolean[len];
         float[] accumulationPreview = new float[len];
         float[] accumulationFinalCropped = new float[len];
         float[] convergenceBonus = new float[len];
         boolean[] changedByConvergence = new boolean[len];
+        float[] directionAlignment = new float[len];
+        float[] rawRiverShapeScore = new float[len];
+        float[] rawMissingRiverCostSignal = new float[len];
+        float[] riverShapeScore = new float[len];
+        float[] missingRiverCostSignal = new float[len];
 
         int sourceOffsetX = blockStartX - source.blockStartX();
         int sourceOffsetZ = blockStartZ - source.blockStartZ();
@@ -104,19 +117,27 @@ public final class TerrainFlowBuilder {
                 int sourceIdx = index(sx, sz, sourceWidth);
 
                 FlowChoice finalChoice = chooseDirection(source, costSource, sx, sz, cx, cz, convergencePotential, true);
+                CostChoice costChoice = chooseCostDirection(costSource, cx, cz);
                 byte pass0Dir = pass0Direction[sourceIdx];
                 byte finalDir = finalDirection[sourceIdx];
                 float previewAccum = pass0Accumulation[sourceIdx];
                 float finalAccum = finalAccumulation[sourceIdx];
+                boolean isSink = finalDir == TerrainFlowTile.SINK_DIRECTION;
+                float alignment = directionAlignment(finalDir, costChoice.direction());
+                float shapeScore = riverShapeScore(finalChoice.drop(), finalAccum, maxAccumulationFinalExpanded, costChoice.drop(), alignment);
+                float missingCost = missingRiverCostSignal(finalChoice.drop(), finalAccum, maxAccumulationFinalExpanded, costChoice.drop());
 
                 surfaceY[idx] = generatedY(source, sx, sz);
+                biomeIds[idx] = biome(source, sx, sz);
+                precipitationMm[idx] = precipitationMm(source, sx, sz);
                 initialDirection[idx] = pass0Dir;
                 direction[idx] = finalDir;
+                costDirection[idx] = costChoice.direction();
                 dropMeters[idx] = finalChoice.drop();
                 uphillMeters[idx] = finalChoice.uphill();
                 selectedCost[idx] = finalChoice.selectedCost();
+                costDrop[idx] = costChoice.drop();
                 score[idx] = finalChoice.score() == Float.POSITIVE_INFINITY ? 0.0F : finalChoice.score();
-                boolean isSink = finalDir == TerrainFlowTile.SINK_DIRECTION;
                 sink[idx] = isSink;
                 accumulationPreview[idx] = previewAccum;
                 accumulationFinalCropped[idx] = finalAccum;
@@ -129,6 +150,9 @@ public final class TerrainFlowBuilder {
                         sourceWidth,
                         convergencePotential
                 );
+                directionAlignment[idx] = alignment;
+                rawRiverShapeScore[idx] = isSink ? 0.0F : shapeScore;
+                rawMissingRiverCostSignal[idx] = isSink ? 0.0F : missingCost;
 
                 // Display max values should not be dominated by terminal sinks. Otherwise the
                 // log accumulation and river preview overlays get compressed and look unrelated
@@ -142,23 +166,33 @@ public final class TerrainFlowBuilder {
             }
         }
 
+        smoothShapeSignal(rawRiverShapeScore, riverShapeScore, sink, width, height);
+        smoothShapeSignal(rawMissingRiverCostSignal, missingRiverCostSignal, sink, width, height);
+
         return new TerrainFlowTile(
                 blockStartX,
                 blockStartZ,
                 width,
                 height,
                 surfaceY,
+                biomeIds,
+                precipitationMm,
                 initialDirection,
                 direction,
+                costDirection,
                 dropMeters,
                 uphillMeters,
                 selectedCost,
+                costDrop,
                 score,
                 sink,
                 accumulationPreview,
                 accumulationFinalCropped,
                 convergenceBonus,
                 changedByConvergence,
+                directionAlignment,
+                riverShapeScore,
+                missingRiverCostSignal,
                 maxAccumulationPreviewCropped,
                 maxAccumulationFinalCropped
         );
@@ -234,6 +268,127 @@ public final class TerrainFlowBuilder {
         }
 
         return new FlowChoice(bestDirection, bestDrop, bestUphill, bestCost, bestScore);
+    }
+
+    private static CostChoice chooseCostDirection(TerrainCostTile costSource, int cx, int cz) {
+        float centerCost = totalCost(costSource, cx, cz);
+        byte bestDirection = TerrainFlowTile.SINK_DIRECTION;
+        float bestDrop = 0.0F;
+
+        for (byte dir = 0; dir < 8; dir++) {
+            int nx = cx + DIR_X[dir];
+            int nz = cz + DIR_Z[dir];
+            if (nx < 0 || nz < 0 || nx >= costSource.width() || nz >= costSource.height()) {
+                continue;
+            }
+
+            float candidateDrop = centerCost - totalCost(costSource, nx, nz);
+            if (candidateDrop > bestDrop) {
+                bestDrop = candidateDrop;
+                bestDirection = dir;
+            }
+        }
+
+        if (bestDrop < TerrainFlowConfig.MIN_COST_DROP) {
+            return new CostChoice(TerrainFlowTile.SINK_DIRECTION, 0.0F);
+        }
+
+        return new CostChoice(bestDirection, bestDrop);
+    }
+
+    private static float directionAlignment(byte flowDirection, byte costDirection) {
+        if (flowDirection < 0 || costDirection < 0) {
+            return 0.0F;
+        }
+
+        float dot = DIR_X[flowDirection] * DIR_X[costDirection] + DIR_Z[flowDirection] * DIR_Z[costDirection];
+        float normalized = dot / (DIR_LENGTH[flowDirection] * DIR_LENGTH[costDirection]);
+        return clamp01(normalized);
+    }
+
+    private static float riverShapeScore(float flowDrop, float accumulation, float maxAccumulation, float costDrop, float alignment) {
+        float accumulationWeight = accumulationWeight(accumulation, maxAccumulation);
+        float dropWeight = smoothstep(
+                TerrainFlowConfig.RIVER_SHAPE_DROP_START_METERS,
+                TerrainFlowConfig.RIVER_SHAPE_DROP_END_METERS,
+                flowDrop
+        );
+        float costWeight = smoothstep(
+                TerrainFlowConfig.MIN_COST_DROP,
+                TerrainFlowConfig.STRONG_COST_DROP,
+                costDrop
+        );
+        return clamp01(accumulationWeight * dropWeight * costWeight * alignment);
+    }
+
+    private static float missingRiverCostSignal(float flowDrop, float accumulation, float maxAccumulation, float costDrop) {
+        float accumulationWeight = accumulationWeight(accumulation, maxAccumulation);
+        float dropWeight = smoothstep(
+                TerrainFlowConfig.RIVER_SHAPE_DROP_START_METERS,
+                TerrainFlowConfig.RIVER_SHAPE_DROP_END_METERS,
+                flowDrop
+        );
+        float costWeakness = 1.0F - smoothstep(
+                TerrainFlowConfig.MIN_COST_DROP,
+                TerrainFlowConfig.STRONG_COST_DROP,
+                costDrop
+        );
+        return clamp01(accumulationWeight * dropWeight * costWeakness);
+    }
+
+
+    private static void smoothShapeSignal(float[] source, float[] target, boolean[] sink, int width, int height) {
+        for (int z = 0; z < height; z++) {
+            for (int x = 0; x < width; x++) {
+                int idx = index(x, z, width);
+                if (sink[idx]) {
+                    target[idx] = 0.0F;
+                    continue;
+                }
+
+                float weightedSum = source[idx] * 4.0F;
+                float weight = 4.0F;
+
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (dx == 0 && dz == 0) {
+                            continue;
+                        }
+
+                        int nx = x + dx;
+                        int nz = z + dz;
+                        if (nx < 0 || nz < 0 || nx >= width || nz >= height) {
+                            continue;
+                        }
+
+                        int neighborIdx = index(nx, nz, width);
+                        if (sink[neighborIdx]) {
+                            continue;
+                        }
+
+                        float neighborWeight = dx == 0 || dz == 0 ? 2.0F : 1.0F;
+                        weightedSum += source[neighborIdx] * neighborWeight;
+                        weight += neighborWeight;
+                    }
+                }
+
+                float localAverage = weight <= 0.0F ? source[idx] : weightedSum / weight;
+                target[idx] = clamp01(source[idx] * (1.0F - SHAPE_SIGNAL_SMOOTHING_BLEND)
+                        + localAverage * SHAPE_SIGNAL_SMOOTHING_BLEND);
+            }
+        }
+    }
+
+    private static float accumulationWeight(float accumulation, float maxAccumulation) {
+        float denominator = (float) Math.log1p(Math.max(1.0F, maxAccumulation));
+        float normalized = denominator <= 0.0F
+                ? 0.0F
+                : (float) (Math.log1p(Math.max(0.0F, accumulation)) / denominator);
+        return smoothstep(
+                TerrainFlowConfig.RIVER_SHAPE_LOG_START,
+                TerrainFlowConfig.RIVER_SHAPE_LOG_END,
+                normalized
+        );
     }
 
     private static float computeAccumulation(byte[] direction, int width, int height, float[] accumulation) {
@@ -375,6 +530,20 @@ public final class TerrainFlowBuilder {
         );
     }
 
+    private static short biome(TerrainBaseTile tile, int localX, int localZ) {
+        return tile.biomeAtLocal(
+                clamp(localX, 0, tile.width() - 1),
+                clamp(localZ, 0, tile.height() - 1)
+        );
+    }
+
+    private static short precipitationMm(TerrainBaseTile tile, int localX, int localZ) {
+        return tile.precipitationMmAtLocal(
+                clamp(localX, 0, tile.width() - 1),
+                clamp(localZ, 0, tile.height() - 1)
+        );
+    }
+
     private static float totalCost(TerrainCostTile tile, int localX, int localZ) {
         return tile.totalAt(
                 clamp(localX, 0, tile.width() - 1),
@@ -409,5 +578,8 @@ public final class TerrainFlowBuilder {
     }
 
     private record FlowChoice(byte direction, float drop, float uphill, float selectedCost, float score) {
+    }
+
+    private record CostChoice(byte direction, float drop) {
     }
 }

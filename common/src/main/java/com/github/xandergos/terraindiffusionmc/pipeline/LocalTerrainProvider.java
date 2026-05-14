@@ -275,6 +275,7 @@ public final class LocalTerrainProvider {
         float[] climate  = out[1];
 
         short[] biomeFlat = BiomeClassifier.classify(elevFlat, climate, i1, j1, elevPadded, H, W, NATIVE_RESOLUTION);
+        short[] precipitationFlat = precipitationFromClimateOrBiome(climate, biomeFlat, H, W);
         HeightmapData data = buildHeightmapData(elevFlat, biomeFlat, H, W);
         TerrainBaseTile debugTile = TerrainBaseTile.fromFlatArrays(
                 j1,
@@ -284,7 +285,8 @@ public final class LocalTerrainProvider {
                 scale,
                 elevFlat,
                 elevFlat,
-                biomeFlat
+                biomeFlat,
+                precipitationFlat
         );
         return new GeneratedTerrainTile(data, debugTile);
     }
@@ -332,6 +334,7 @@ public final class LocalTerrainProvider {
         float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
 
         short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
+        short[] precipitationFlat = precipitationFromClimateOrBiome(climate, biomeFlat, H, W);
         HeightmapData data = buildHeightmapData(elevOut, biomeFlat, H, W);
         TerrainBaseTile debugTile = TerrainBaseTile.fromFlatArrays(
                 j1,
@@ -341,7 +344,8 @@ public final class LocalTerrainProvider {
                 scale,
                 elevSmooth,
                 elevOut,
-                biomeFlat
+                biomeFlat,
+                precipitationFlat
         );
         return new GeneratedTerrainTile(data, debugTile);
     }
@@ -427,6 +431,44 @@ public final class LocalTerrainProvider {
         float[][] a = new float[H][W];
         for (int r = 0; r < H; r++) System.arraycopy(flat, r * W, a[r], 0, W);
         return a;
+    }
+
+    private static short[] precipitationFromClimateOrBiome(float[] climate, short[] biomeFlat, int H, int W) {
+        int len = H * W;
+        short[] out = new short[len];
+        if (climate != null && climate.length >= 3 * len) {
+            int offset = 2 * len;
+            for (int idx = 0; idx < len; idx++) {
+                out[idx] = clampToShort(Math.round(Math.max(0.0F, climate[offset + idx])));
+            }
+            return out;
+        }
+
+        for (int idx = 0; idx < len; idx++) {
+            out[idx] = fallbackPrecipitationMm(biomeFlat[idx]);
+        }
+        return out;
+    }
+
+    private static short fallbackPrecipitationMm(short biomeId) {
+        return switch (biomeId) {
+            case 5, 26 -> 90;
+            case 17 -> 520;
+            case 6 -> 1450;
+            case 23 -> 2100;
+            case 8, 108 -> 980;
+            case 15, 16, 115, 116 -> 820;
+            case 3, 29, 31, 32 -> 760;
+            case 33, 35, 19 -> 640;
+            case 41, 44, 46, 48 -> 1100;
+            default -> 700;
+        };
+    }
+
+    private static short clampToShort(int value) {
+        if (value < Short.MIN_VALUE) return Short.MIN_VALUE;
+        if (value > Short.MAX_VALUE) return Short.MAX_VALUE;
+        return (short) value;
     }
 
     private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, int H, int W) {
