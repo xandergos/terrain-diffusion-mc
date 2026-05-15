@@ -258,7 +258,7 @@ public final class BiomeRegionConfig {
             priorities = Arrays.copyOf(priorities, j);
         }
 
-        return new BiomeClassifier.CompiledRegion(min, max, biomeIds, priorities);
+        return new BiomeClassifier.CompiledRegion(region.name, min, max, biomeIds, priorities);
     }
 
     private static BiomeRegionConfigJson readConfigJson() {

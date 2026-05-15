@@ -2,9 +2,11 @@ package com.github.xandergos.terraindiffusionmc;
 
 import com.github.xandergos.terraindiffusionmc.config.BiomeRegionConfig;
 import com.github.xandergos.terraindiffusionmc.explorer.ExplorerServer;
+import com.github.xandergos.terraindiffusionmc.pipeline.BiomeClassifier;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
 import com.github.xandergos.terraindiffusionmc.pipeline.ModelAssetManager;
 import com.github.xandergos.terraindiffusionmc.pipeline.PipelineModels;
+import com.github.xandergos.terraindiffusionmc.pipeline.WorldPipelineModelConfig;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionBiomeSource;
 import com.github.xandergos.terraindiffusionmc.world.TerrainDiffusionDensityFunction;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
@@ -86,6 +88,7 @@ public class TerrainDiffusionMc {
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(literal("td-explore").executes(TerrainDiffusionMc::executeExplore));
+        event.getDispatcher().register(literal("td-biome").executes(TerrainDiffusionMc::executeTdBiome));
     }
 
     private static int executeExplore(CommandContext<CommandSourceStack> ctx) {
@@ -103,5 +106,64 @@ public class TerrainDiffusionMc {
             ctx.getSource().sendFailure(Component.literal("Failed to start terrain explorer: " + e.getMessage()));
         }
         return 1;
+    }
+
+    private static int executeTdBiome(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        var pos = source.getPosition();
+        int blockX = (int) Math.floor(pos.x);
+        int blockZ = (int) Math.floor(pos.z);
+
+        int scale = WorldScaleManager.getCurrentScale();
+        float nativeRes = WorldPipelineModelConfig.nativeResolution();
+
+        // Convert block coords to native pipeline pixel coords (i=Z, j=X convention).
+        int pixX = Math.floorDiv(blockX, Math.max(1, scale));
+        int pixZ = Math.floorDiv(blockZ, Math.max(1, scale));
+
+        source.sendSuccess(() -> Component.literal(
+                String.format("[TD] Querying %d, %d (native px %d, %d)…", blockX, blockZ, pixX, pixZ)),
+                false);
+
+        // Run on a daemon thread so the server thread is never blocked waiting for inference.
+        Thread thread = new Thread(() -> {
+            try {
+                // 3×3 padded region: centre is the target pixel, neighbours supply the Sobel kernel.
+                float[][] data = LocalTerrainProvider.getPipelineData(pixZ - 1, pixX - 1, pixZ + 2, pixX + 2, true);
+                float[] elev3x3    = data[0];
+                float[] climate3x3 = data[1];
+
+                BiomeClassifier.DebugInfo info = BiomeClassifier.debugClassify(
+                        pixX, pixZ, elev3x3, climate3x3, nativeRes);
+
+                String msg = formatBiomeDebug(blockX, blockZ, pixX, pixZ, scale, info);
+                source.getServer().execute(() -> source.sendSuccess(() -> Component.literal(msg), false));
+            } catch (Exception e) {
+                LOG.error("td-biome failed", e);
+                source.getServer().execute(() ->
+                        source.sendFailure(Component.literal("td-biome failed: " + e.getMessage())));
+            }
+        }, "td-biome-debug");
+        thread.setDaemon(true);
+        thread.start();
+
+        return 1;
+    }
+
+    private static String formatBiomeDebug(int blockX, int blockZ, int pixX, int pixZ,
+                                           int scale, BiomeClassifier.DebugInfo info) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format("[TD Biome] %d, %d", blockX, blockZ));
+        if (scale > 1) sb.append(String.format(" (native px %d, %d  scale=%d)", pixX, pixZ, scale));
+        sb.append(String.format("\n  temp=%.1f°C  precip=%.0f mm/yr  elev=%.0f m  slope=%.3f",
+                info.temperature, info.precipitation, info.elevation, info.slope));
+        if (info.matchingRegions.isEmpty()) {
+            sb.append("\n  no matching region");
+            if (info.fallbackRegion != null)
+                sb.append(" → fallback: ").append(info.fallbackRegion);
+        } else {
+            sb.append("\n  regions: ").append(String.join(", ", info.matchingRegions));
+        }
+        return sb.toString();
     }
 }

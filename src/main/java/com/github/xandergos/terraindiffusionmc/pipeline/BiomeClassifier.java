@@ -1,5 +1,9 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * Rule-based biome classifier port of _classify_biome in minecraft_api.py.
  *
@@ -37,12 +41,14 @@ public final class BiomeClassifier {
         // Per-variable normalization scale for distance computation
         private static final float[] DIST_SCALES = {60f, 2000f, 6000f, 1.5f};
 
+        public final String name;
         public final float[] min;         // [VAR_COUNT] inclusive lower bounds
         public final float[] max;         // [VAR_COUNT] inclusive upper bounds
         public final short[] biomeIds;    // biome pool
         public final float[] priorities;  // per-biome priority (parallel to biomeIds)
 
-        public CompiledRegion(float[] min, float[] max, short[] biomeIds, float[] priorities) {
+        public CompiledRegion(String name, float[] min, float[] max, short[] biomeIds, float[] priorities) {
+            this.name = name;
             this.min = min;
             this.max = max;
             this.biomeIds = biomeIds;
@@ -274,6 +280,85 @@ public final class BiomeClassifier {
             return out;
         }
         return classifyWithSlope(elev, climate, i0, j0, computeSlopeRatio(elevPadded, H, W, pixelSizeM), H, W);
+    }
+
+    /** Per-pixel climate and region debug info returned by {@link #debugClassify}. */
+    public static final class DebugInfo {
+        public final float temperature;
+        public final float precipitation;
+        public final float elevation;
+        public final float slope;
+        /** Names of all regions whose conditions matched the climate variables. */
+        public final List<String> matchingRegions;
+        /** Closest region used as fallback when no region matched; null otherwise. */
+        public final String fallbackRegion;
+
+        DebugInfo(float temperature, float precipitation, float elevation, float slope,
+                  List<String> matchingRegions, String fallbackRegion) {
+            this.temperature = temperature;
+            this.precipitation = precipitation;
+            this.elevation = elevation;
+            this.slope = slope;
+            this.matchingRegions = matchingRegions;
+            this.fallbackRegion = fallbackRegion;
+        }
+    }
+
+    /**
+     * Compute debug classification info for a single native-resolution pixel.
+     * Applies the same noise perturbations as the hot classify path.
+     *
+     * @param nx          column pixel coordinate (matches noise-sampling coords in classifyWithSlope)
+     * @param ny          row pixel coordinate
+     * @param elev3x3     elevation for a 3×3 region centred at (nx,ny), row-major, 9 elements;
+     *                    returned by {@code getPipelineData(pz-1,px-1,pz+2,px+2)}
+     * @param climate3x3  climate channels for the same 3×3 region, channel-major
+     *                    ({@code climate[ch*9 + row*3 + col]}), at least 3×9 elements
+     * @param pixelSizeM  physical size of one pixel in metres (= nativeResolution / scale)
+     */
+    public static DebugInfo debugClassify(float nx, float ny,
+                                          float[] elev3x3, float[] climate3x3,
+                                          float pixelSizeM) {
+        final int CENTER = 4; // row=1, col=1 in the 3×3 grid
+
+        float tempNoise    = 0.4f * TEMP_NOISE.GetNoise(nx, ny) + 0.2f * TEMP_NOISE_FINE.GetNoise(nx, ny);
+        float precipFactor = 1f + 0.2f * PRECIP_NOISE.GetNoise(nx, ny);
+
+        float temp   = climate3x3[CENTER] + tempNoise;                    // ch 0
+        float precip = Math.max(0f, climate3x3[2 * 9 + CENTER]) * precipFactor; // ch 2
+        float elev   = elev3x3[CENTER];
+        float slope  = computeSlopeRatio(elev3x3, 1, 1, pixelSizeM)[0];
+
+        float[] vars = new float[VAR_COUNT];
+        vars[VAR_TEMPERATURE]   = temp;
+        vars[VAR_PRECIPITATION] = precip;
+        vars[VAR_ELEVATION]     = elev;
+        vars[VAR_SLOPE]         = slope;
+
+        CompiledRegion[] regions = compiledRegions;
+        List<String> matching = new ArrayList<>();
+        String fallback = null;
+
+        if (regions != null) {
+            for (CompiledRegion r : regions) {
+                if (r.matches(vars)) matching.add(r.name);
+            }
+            if (matching.isEmpty()) {
+                float bestDist = Float.MAX_VALUE;
+                int bestIdx = -1;
+                for (int i = 0; i < regions.length; i++) {
+                    if (regions[i].biomeIds.length == 0) continue;
+                    float d = regions[i].distanceTo(vars);
+                    if (d < bestDist) { bestDist = d; bestIdx = i; }
+                }
+                if (bestIdx >= 0) {
+                    fallback = String.format("%s (dist=%.3f)", regions[bestIdx].name, bestDist);
+                }
+            }
+        }
+
+        return new DebugInfo(temp, precip, elev, slope,
+                Collections.unmodifiableList(matching), fallback);
     }
 
     /**
