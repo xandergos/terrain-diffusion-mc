@@ -1,10 +1,10 @@
 {
-  "cellNoiseScale": 300,
-  "warpAmplitude": 80,
-  "warpScale": 200,
+  "cellNoiseScale": 1000,
+  "warpAmplitude": 115,
+  "warpScale": 100,
   "warpOctaves": 2,
   "warpLacunarity": 2.0,
-  "warpGain": 0.5,
+  "warpGain": 0.54,
   "regions": [
     {
       "name": "frozen_ocean",
