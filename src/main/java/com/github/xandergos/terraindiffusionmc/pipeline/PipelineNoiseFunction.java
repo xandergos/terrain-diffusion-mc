@@ -49,12 +49,12 @@ public final class PipelineNoiseFunction implements DensityFunction {
 
     private final Map<Long, LocalTerrainProvider.HeightmapData> tileCache = new ConcurrentHashMap<>();
 
-    private long pack(int tileX, int tileZ, int tileSize) {
+    private long pack(int tileX, int tileZ) {
         return (((long) tileX) << 32) | (tileZ & 0xffffffffL);
     }
 
     private LocalTerrainProvider.HeightmapData getTile(int tileX, int tileZ, int tileSize) {
-        long key = pack(tileX, tileZ, tileSize);
+        long key = pack(tileX, tileZ);
 
         return tileCache.computeIfAbsent(key, k -> {
             int startX = tileX * tileSize;
@@ -83,11 +83,11 @@ public final class PipelineNoiseFunction implements DensityFunction {
         LocalTerrainProvider.HeightmapData data = getTile(tileX, tileZ, tileSize);
 
         return switch(channel) {
-            case EROSION -> 0.0;
-            case CONTINENTS -> 0.5;
+            case EROSION -> computeErosion(localX, localZ, data);
+            case CONTINENTS -> computeContinents(localX, localZ, data);
             case TEMPERATURE -> computeTemperature(x, z, localX, localZ, data);
             case VEGETATION -> computeVegetation(x, z, localX, localZ, data);
-            case DEPTH -> -0.2;
+            case DEPTH -> computeDepth(localX, localZ, data);
         };
     }
 
@@ -120,7 +120,7 @@ public final class PipelineNoiseFunction implements DensityFunction {
     }
 
     private double computeTemperature(int globalX, int globalZ, int localX, int localZ, LocalTerrainProvider.HeightmapData data) {
-        int idx = localZ * data.width + localX;
+        int idx = localX * data.width + localZ;
 
         float baseTemp = data.climate[idx];
 
@@ -141,13 +141,63 @@ public final class PipelineNoiseFunction implements DensityFunction {
         float moistureBase = 1.0f - Math.max(0f, (temp - 10f) / 40f);
         float aridity = precipFactor * moistureBase;
 
-        aridity = Math.max(0f, Math.min(1.5f, aridity));
+        aridity = Math.clamp(aridity, 0f, 1.5f);
 
-        float vegetation =
-                aridity * (0.6f + 0.4f * Math.max(0f, 1f - Math.abs(temp - 15f) / 30f));
+        float vegetation = aridity * (0.6f + 0.4f * Math.max(0f, 1f - Math.abs(temp - 15f) / 30f));
 
         float micro = 0.05f * TEMP_NOISE_FINE.GetNoise(globalX, globalZ);
 
         return vegetation + micro;
+    }
+
+    private double computeContinents(int localX, int localZ, LocalTerrainProvider.HeightmapData data) {
+        float elev = data.heightmap[localX][localZ];
+        float continentalness;
+
+        if (elev < 0f) {
+            continentalness = elev / 512f;
+        } else {
+            continentalness = elev / 2048f;
+        }
+
+        continentalness = Math.clamp(continentalness, -1f, 1f);
+
+        return continentalness;
+    }
+
+    private double computeDepth(int localX, int localZ, LocalTerrainProvider.HeightmapData data) {
+        float elev = data.heightmap[localX][localZ];
+        float depth = elev / 1024f;
+
+        if (depth > 0f) {
+            depth *= 0.5f;
+        }
+
+        depth = Math.clamp(depth, -1f, 1f);
+
+        return -depth;
+    }
+
+    private double computeErosion(int localX, int localZ, LocalTerrainProvider.HeightmapData data) {
+        float north = sampleHeight(localX, localZ - 1, data);
+        float south = sampleHeight(localX, localZ + 1, data);
+        float east  = sampleHeight(localX + 1, localZ, data);
+        float west  = sampleHeight(localX - 1, localZ, data);
+
+        float dx = east - west;
+        float dz = south - north;
+        float slope = (float) Math.sqrt(dx * dx + dz * dz);
+
+        float erosion = 1.0f - Math.min(1.0f, slope / 128f);
+        erosion = erosion * 2f - 1f;
+
+        return erosion;
+    }
+
+    private float sampleHeight(int globalX, int globalZ, LocalTerrainProvider.HeightmapData data) {
+        globalX = Math.clamp(globalX, 0, data.width - 1);
+        globalZ = Math.clamp(globalZ, 0, data.height - 1);
+
+        return data.heightmap[globalX][globalZ];
     }
 }
