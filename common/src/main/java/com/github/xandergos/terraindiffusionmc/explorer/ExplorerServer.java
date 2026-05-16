@@ -564,6 +564,7 @@ public final class ExplorerServer {
 
     private static int biomeRgb(short id) {
         switch (id) {
+            case BiomePalette.THE_VOID: return 0x000000;
             case BiomePalette.SUNFLOWER_PLAINS: return 0xB7D85B;
             case BiomePalette.SNOWY_PLAINS: return 0xFFFFFF;
             case BiomePalette.ICE_SPIKES: return 0xD8F4FF;
@@ -613,6 +614,19 @@ public final class ExplorerServer {
             case BiomePalette.FROZEN_OCEAN: return 0x7070D6;
             case BiomePalette.DEEP_FROZEN_OCEAN: return 0x404090;
             case BiomePalette.MUSHROOM_FIELDS: return 0xFF00FF;
+            case BiomePalette.DRIPSTONE_CAVES: return 0x8C7A65;
+            case BiomePalette.LUSH_CAVES: return 0x58B84A;
+            case BiomePalette.DEEP_DARK: return 0x07131A;
+            case BiomePalette.NETHER_WASTES: return 0xBF3B2B;
+            case BiomePalette.WARPED_FOREST: return 0x2B7F8C;
+            case BiomePalette.CRIMSON_FOREST: return 0x8C1F32;
+            case BiomePalette.SOUL_SAND_VALLEY: return 0x5A463A;
+            case BiomePalette.BASALT_DELTAS: return 0x403A3A;
+            case BiomePalette.THE_END: return 0xF5F0B0;
+            case BiomePalette.END_HIGHLANDS: return 0xD6D184;
+            case BiomePalette.END_MIDLANDS: return 0xC9C477;
+            case BiomePalette.SMALL_END_ISLANDS: return 0xB8B36B;
+            case BiomePalette.END_BARRENS: return 0x9E9A5D;
             case BiomePalette.PALE_GARDEN: return 0xC7C7B0;
             case BiomePalette.FOREST_SPARSE: return 0x4E8E4E;
             case BiomePalette.TAIGA_SPARSE: return 0x4D6B61;
