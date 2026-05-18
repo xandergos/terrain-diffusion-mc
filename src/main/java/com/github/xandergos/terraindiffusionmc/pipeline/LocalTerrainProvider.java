@@ -1,13 +1,12 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.infinitetensor.FloatTensor;
 import com.github.xandergos.terraindiffusionmc.world.WorldScaleManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -15,6 +14,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Provides terrain heightmap and biome data from the local WorldPipeline.
@@ -56,16 +56,48 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private static final int MAX_CACHE_SIZE = 64;
-    private static final Object CACHE_LOCK = new Object();
-    private static final Map<String, HeightmapData> CACHE = new LinkedHashMap<>(16, 0.75f, true);
-    private static final Map<String, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
-    /** Single thread for pipeline.get() so MemoryTileStore is not accessed concurrently. */
-    private static final ExecutorService INFERENCE_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "terrain-diffusion-inference");
-        t.setDaemon(true);
-        return t;
-    });
+    private static final int MAX_CACHE_SIZE = 256;
+    private static final ConcurrentHashMap<Long, HeightmapData> CACHE = new ConcurrentHashMap<>(256);
+    private static final ConcurrentHashMap<Long, Future<HeightmapData>> PENDING = new ConcurrentHashMap<>();
+    /**
+     * Pool that runs pipeline tile inference. Sized via {@link #resolveInferenceThreadCount()}:
+     * <ul>
+     *   <li>CPU mode: 1 (ONNX Runtime already does intra-op parallelism on CPU; concurrent
+     *       sessions oversubscribe cores).</li>
+     *   <li>GPU + offload_models=true: 1 (concurrent threads would thrash the GPU slot lock,
+     *       swapping models on every runModel call — strictly worse than serial).</li>
+     *   <li>GPU + offload_models=false: respects {@code inference.threads} config (default 2).</li>
+     * </ul>
+     * <p>The win at pool>1 is mostly prefetch overlap: tile fetches no longer queue
+     * sequentially behind the demanded tile, so the next tile is ready when a player
+     * crosses a boundary. Raw inference throughput on a single GPU is bounded by SM
+     * occupancy and is rarely 2× faster with two concurrent calls.
+     */
+    private static final ExecutorService INFERENCE_EXECUTOR = createInferenceExecutor();
+
+    private static ExecutorService createInferenceExecutor() {
+        int threadCount = resolveInferenceThreadCount();
+        AtomicInteger threadId = new AtomicInteger(0);
+        LOG.info("Terrain diffusion inference pool size: {}", threadCount);
+        return Executors.newFixedThreadPool(threadCount, r -> {
+            Thread t = new Thread(r, "terrain-diffusion-inference-" + threadId.getAndIncrement());
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
+    /**
+     * Resolves the inference pool size, auto-clamping to 1 in modes where concurrency
+     * would hurt rather than help. See {@link #INFERENCE_EXECUTOR} for rationale.
+     */
+    private static int resolveInferenceThreadCount() {
+        int requested = TerrainDiffusionConfig.inferenceThreads();
+        if (requested <= 1) return 1;
+        String device = TerrainDiffusionConfig.inferenceDevice();
+        if ("cpu".equals(device)) return 1;
+        if (TerrainDiffusionConfig.offloadModels()) return 1;
+        return requested;
+    }
 
     private static volatile LocalTerrainProvider INSTANCE;
     private static long instanceSeed;
@@ -87,26 +119,30 @@ public final class LocalTerrainProvider {
         } else if (instanceSeed != seed) {
             INSTANCE.pipeline.setSeed(seed);
             instanceSeed = seed;
-            synchronized (CACHE_LOCK) { CACHE.clear(); }
+            CACHE.clear();
             PENDING.clear();
         }
     }
 
-    public static synchronized LocalTerrainProvider getInstance() {
-        if (INSTANCE == null) {
-            PipelineModels.awaitLoad();
-            PipelineModels models = PipelineModels.getInstance();
-            if (models == null) throw new IllegalStateException("PipelineModels failed to load");
-            INSTANCE = new LocalTerrainProvider(0L, models);
-            instanceSeed = 0L;
+    public static LocalTerrainProvider getInstance() {
+        // Fast path: volatile read avoids acquiring the class monitor on every density-function
+        // evaluation (called by every chunk-generation thread, including C2ME worker threads).
+        LocalTerrainProvider instance = INSTANCE;
+        if (instance != null) return instance;
+        synchronized (LocalTerrainProvider.class) {
+            if (INSTANCE == null) {
+                PipelineModels.awaitLoad();
+                PipelineModels models = PipelineModels.getInstance();
+                if (models == null) throw new IllegalStateException("PipelineModels failed to load");
+                INSTANCE = new LocalTerrainProvider(0L, models);
+                instanceSeed = 0L;
+            }
+            return INSTANCE;
         }
-        return INSTANCE;
     }
 
     public static void clearCache() {
-        synchronized (CACHE_LOCK) {
-            CACHE.clear();
-        }
+        CACHE.clear();
         PENDING.clear();
     }
 
@@ -147,7 +183,7 @@ public final class LocalTerrainProvider {
             LocalTerrainProvider provider = getInstance();
             provider.pipeline.setSeed(newSeed);
             instanceSeed = newSeed;
-            synchronized (CACHE_LOCK) { CACHE.clear(); }
+            CACHE.clear();
             PENDING.clear();
             return null;
         });
@@ -170,12 +206,27 @@ public final class LocalTerrainProvider {
      * Blocks the calling thread until the tile is ready (one tile can take 10–30+ seconds).
      * If the caller is the server or a chunk worker, the game will stall until this returns.
      */
-    public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
-        String key = i1 + "," + j1 + "," + i2 + "," + j2;
-        synchronized (CACHE_LOCK) {
-            HeightmapData cached = CACHE.get(key);
-            if (cached != null) return cached;
+    /** Pack (i1, j1) into a single long cache key. i2/j2 are always i1+tileSize / j1+tileSize. */
+    private static long tileKey(int i1, int j1) {
+        return ((long) i1 << 32) | (j1 & 0xFFFFFFFFL);
+    }
+
+    private static void putAndEvict(long key, HeightmapData data) {
+        CACHE.put(key, data);
+        int excess = CACHE.size() - MAX_CACHE_SIZE;
+        if (excess > 0) {
+            Iterator<Long> it = CACHE.keySet().iterator();
+            for (int i = 0; i < excess && it.hasNext(); i++) {
+                it.next();
+                it.remove();
+            }
         }
+    }
+
+    public HeightmapData fetchHeightmap(int i1, int j1, int i2, int j2) {
+        long key = tileKey(i1, j1);
+        HeightmapData cached = CACHE.get(key);
+        if (cached != null) return cached;
 
         int scale = WorldScaleManager.getCurrentScale();
         FutureTask<HeightmapData> task = new FutureTask<>(() -> {
@@ -183,30 +234,32 @@ public final class LocalTerrainProvider {
             HeightmapData data = scale <= 1
                     ? handle1x(i1, j1, i2, j2)
                     : handleUpsampled(i1, j1, i2, j2, scale);
-            long computedWindowCountAfter = pipeline.getTotalComputedWindowCount();
-
-            long newlyComputedWindowCount = computedWindowCountAfter - computedWindowCountBefore;
-            int regionWidth = j2 - j1;
-            int regionHeight = i2 - i1;
+            long newlyComputedWindowCount = pipeline.getTotalComputedWindowCount() - computedWindowCountBefore;
             LOG.info(
                     "Terrain Diffusion ({}) finished generating region {}x{} ({} newly computed windows)",
-                    OnnxModel.getResolvedInferenceProvider(), regionWidth, regionHeight, newlyComputedWindowCount);
-            synchronized (CACHE_LOCK) {
-                CACHE.put(key, data);
-                evictLruTo(MAX_CACHE_SIZE);
-            }
+                    OnnxModel.getResolvedInferenceProvider(), j2 - j1, i2 - i1, newlyComputedWindowCount);
+            putAndEvict(key, data);
             PENDING.remove(key);
             return data;
         });
         Future<HeightmapData> existing = PENDING.putIfAbsent(key, task);
         FutureTask<HeightmapData> toRun = (existing == null) ? task : (FutureTask<HeightmapData>) existing;
         if (existing == null) {
-            int regionWidth = j2 - j1;
-            int regionHeight = i2 - i1;
             LOG.info(
                     "Terrain Diffusion ({}) uncached region requested: ({}, {})-({}, {}) size {}x{}",
-                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, regionWidth, regionHeight);
+                    OnnxModel.getResolvedInferenceProvider(), j1, i1, j2, i2, j2 - j1, i2 - i1);
             INFERENCE_EXECUTOR.submit(toRun);
+
+            // Speculatively warm the four adjacent tiles while this one generates.
+            // Guard: only prefetch when the queue is nearly empty so bulk LOD requests
+            // from mods like Voxy don't cascade into exponential prefetch storms.
+            if (PENDING.size() <= 2) {
+                int tH = i2 - i1, tW = j2 - j1;
+                prefetchIfAbsent(i1 - tH, j1, i2 - tH, j2, scale);
+                prefetchIfAbsent(i1 + tH, j1, i2 + tH, j2, scale);
+                prefetchIfAbsent(i1, j1 - tW, i2, j2 - tW, scale);
+                prefetchIfAbsent(i1, j1 + tW, i2, j2 + tW, scale);
+            }
         }
         try {
             return toRun.get();
@@ -216,11 +269,25 @@ public final class LocalTerrainProvider {
         }
     }
 
-    private static void evictLruTo(int maxSize) {
-        Iterator<Map.Entry<String, HeightmapData>> it = CACHE.entrySet().iterator();
-        while (CACHE.size() > maxSize && it.hasNext()) {
-            it.next();
-            it.remove();
+    /**
+     * Submit a tile for background generation without blocking the caller.
+     * No-ops if the tile is already cached or in flight.
+     * The resulting Future is stored in PENDING so any later fetchHeightmap() call for the
+     * same region attaches to it rather than spawning a duplicate inference run.
+     */
+    private void prefetchIfAbsent(int i1, int j1, int i2, int j2, int scale) {
+        long key = tileKey(i1, j1);
+        if (CACHE.containsKey(key) || PENDING.containsKey(key)) return;
+        FutureTask<HeightmapData> task = new FutureTask<>(() -> {
+            HeightmapData data = scale <= 1
+                    ? handle1x(i1, j1, i2, j2)
+                    : handleUpsampled(i1, j1, i2, j2, scale);
+            putAndEvict(key, data);
+            PENDING.remove(key);
+            return data;
+        });
+        if (PENDING.putIfAbsent(key, task) == null) {
+            INFERENCE_EXECUTOR.submit(task);
         }
     }
 
@@ -231,6 +298,12 @@ public final class LocalTerrainProvider {
     private HeightmapData handle1x(int i1, int j1, int i2, int j2) {
         int H = i2 - i1, W = j2 - j1;
 
+        // Two pipeline calls — matches upstream behaviour. The previous single-call
+        // refactor (efficient: read padded once and crop) produced subtly different
+        // per-pixel elev values at shorelines because the pipeline's Laplacian-decode
+        // step depends on the requested region's padding context. Using two separate
+        // calls (one padded, one un-padded) restores upstream-identical elev values
+        // for the inner region, which is what gets fed to the density function.
         float[] elevPadded = pipeline.get(i1 - 1, j1 - 1, i2 + 1, j2 + 1, false)[0];
         float[][] out = pipeline.get(i1, j1, i2, j2, true);
         float[] elevFlat = out[0];
@@ -280,9 +353,13 @@ public final class LocalTerrainProvider {
         // Upsample climate (4, nH, nW) → (4, H, W)
         float[] climate = upsampleClimate(climateNativeFlat, nH, nW, cropI1, cropJ1, H, W, scale, nH * scale, nW * scale);
 
-        float[] elevOut = addElevationNoise(elevSmooth, elevPadded, i1, j1, H, W, pixelSizeM);
+        // Compute Sobel gradient once; share between noise blending and biome classification.
+        float[] slopeGradient = sobelGradient(elevPadded, H + 2, W + 2, H, W);
+        float[] elevOut = addElevationNoise(elevSmooth, slopeGradient, i1, j1, H, W, pixelSizeM);
 
-        short[] biomeFlat = BiomeClassifier.classify(elevSmooth, climate, i1, j1, elevPadded, H, W, pixelSizeM);
+        float[] slopeRatio = new float[H * W];
+        for (int k = 0; k < H * W; k++) slopeRatio[k] = slopeGradient[k] / pixelSizeM;
+        short[] biomeFlat = BiomeClassifier.classifyWithSlope(elevSmooth, climate, i1, j1, slopeRatio, H, W);
         return buildHeightmapData(elevOut, biomeFlat, H, W);
     }
 
@@ -290,9 +367,8 @@ public final class LocalTerrainProvider {
     // Helpers
     // =========================================================================
 
-    private float[] addElevationNoise(float[] elevSmooth, float[] elevPadded,
+    private float[] addElevationNoise(float[] elevSmooth, float[] slopeGradient,
                                        int i1, int j1, int H, int W, float pixelSizeM) {
-        float[] slopeGradient = sobelGradient(elevPadded, H + 2, W + 2, H, W);
         float[] elevOut = elevSmooth.clone();
         float normFactor = 40f * pixelSizeM / NATIVE_RESOLUTION;
         float ampC = 100f * pixelSizeM / NATIVE_RESOLUTION;
@@ -372,12 +448,13 @@ public final class LocalTerrainProvider {
     private static HeightmapData buildHeightmapData(float[] elevFlat, short[] biomeFlat, int H, int W) {
         short[][] heightmap = new short[H][W];
         short[][] biomeIds  = new short[H][W];
-        for (int r = 0; r < H; r++)
+        for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
                 float e = elevFlat[r * W + c];
                 heightmap[r][c] = (short) Math.max(-32768, Math.min(32767, (int) Math.floor(e)));
                 biomeIds[r][c]  = biomeFlat[r * W + c];
             }
+        }
         return new HeightmapData(heightmap, biomeIds, W, H);
     }
 }

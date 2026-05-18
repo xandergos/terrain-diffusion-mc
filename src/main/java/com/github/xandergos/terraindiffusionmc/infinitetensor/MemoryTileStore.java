@@ -1,6 +1,7 @@
 package com.github.xandergos.terraindiffusionmc.infinitetensor;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -9,17 +10,21 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>Each tensor registered with this store maintains its own ordered map of
  * window index → FloatTensor, with LRU eviction governed by the per-tensor
  * cache limit supplied at creation time.
+ *
+ * <p>Thread safety: top-level registries use {@link ConcurrentHashMap}. Per-tensor
+ * cache mutations and reads (the access-order {@link LinkedHashMap} mutates on get)
+ * are synchronized on the per-tensor cache map.
  */
 public class MemoryTileStore {
 
     /** Window cache per tensor id: access-order LinkedHashMap for LRU. */
-    private final Map<String, LinkedHashMap<List<Integer>, FloatTensor>> windowCaches = new HashMap<>();
+    private final Map<String, LinkedHashMap<List<Integer>, FloatTensor>> windowCaches = new ConcurrentHashMap<>();
 
     /** Tracked byte count per tensor id. */
-    private final Map<String, long[]> cacheSizes = new HashMap<>();
+    private final Map<String, long[]> cacheSizes = new ConcurrentHashMap<>();
 
     /** All registered tensor instances, by id. */
-    private final Map<String, InfiniteTensor> tensors = new HashMap<>();
+    private final Map<String, InfiniteTensor> tensors = new ConcurrentHashMap<>();
     /** Monotonic count of newly computed/cached windows across all tensors. */
     private final AtomicLong totalComputedWindowCount = new AtomicLong(0L);
 
@@ -48,13 +53,14 @@ public class MemoryTileStore {
             TensorWindow[] depWindows,
             long cacheLimitBytes) {
 
-        if (tensors.containsKey(id)) return tensors.get(id);
+        InfiniteTensor existing = tensors.get(id);
+        if (existing != null) return existing;
 
         InfiniteTensor tensor = new InfiniteTensor(
                 id, shape, outputWindow, function, null, 0,
                 deps, depWindows, this, cacheLimitBytes);
-        register(id, tensor);
-        return tensor;
+        InfiniteTensor prior = registerIfAbsent(id, tensor);
+        return prior != null ? prior : tensor;
     }
 
     /**
@@ -72,39 +78,47 @@ public class MemoryTileStore {
             long cacheLimitBytes,
             int batchSize) {
 
-        if (tensors.containsKey(id)) return tensors.get(id);
+        InfiniteTensor existing = tensors.get(id);
+        if (existing != null) return existing;
 
         InfiniteTensor tensor = new InfiniteTensor(
                 id, shape, outputWindow, null, batchFunction, batchSize,
                 deps, depWindows, this, cacheLimitBytes);
-        register(id, tensor);
-        return tensor;
+        InfiniteTensor prior = registerIfAbsent(id, tensor);
+        return prior != null ? prior : tensor;
     }
 
-    private void register(String id, InfiniteTensor tensor) {
-        tensors.put(id, tensor);
+    /**
+     * Atomically registers a tensor under {@code id} and creates its cache structures.
+     * Returns null if newly registered, or the existing tensor if another thread won the race.
+     */
+    private InfiniteTensor registerIfAbsent(String id, InfiniteTensor tensor) {
+        InfiniteTensor prior = tensors.putIfAbsent(id, tensor);
+        if (prior != null) return prior;
         // access-order LinkedHashMap for LRU eviction
         windowCaches.put(id, new LinkedHashMap<>(16, 0.75f, true));
         cacheSizes.put(id, new long[]{0L});
+        return null;
     }
 
     // -------------------------------------------------------------------------
     // Cache operations (called from InfiniteTensor)
     // -------------------------------------------------------------------------
 
-    void cacheWindow(String id, int[] windowIndex, FloatTensor output) {
+    void cacheWindow(String id, int[] windowIndex, FloatTensor output, long limitBytes) {
         List<Integer> key = toKey(windowIndex);
         LinkedHashMap<List<Integer>, FloatTensor> cache = windowCaches.get(id);
         long[] size = cacheSizes.get(id);
 
-        if (cache.containsKey(key)) {
-            // Already present; move to end (most-recent).
-            cache.get(key); // triggers access-order promotion
-            return;
+        synchronized (cache) {
+            if (cache.containsKey(key)) {
+                cache.get(key); // promote to most-recent in access-order map
+                return;
+            }
+            cache.put(key, output);
+            size[0] += output.byteSize();
+            evictLocked(cache, size, limitBytes);
         }
-
-        cache.put(key, output);
-        size[0] += output.byteSize();
         totalComputedWindowCount.incrementAndGet();
     }
 
@@ -113,12 +127,9 @@ public class MemoryTileStore {
         return totalComputedWindowCount.get();
     }
 
-    void evictIfNeeded(String id, long limitBytes) {
+    private static void evictLocked(LinkedHashMap<List<Integer>, FloatTensor> cache,
+                                    long[] size, long limitBytes) {
         if (limitBytes == Long.MAX_VALUE) return;
-        LinkedHashMap<List<Integer>, FloatTensor> cache = windowCaches.get(id);
-        long[] size = cacheSizes.get(id);
-        if (cache == null) return;
-
         // Keep at least one entry even if it exceeds the limit.
         Iterator<Map.Entry<List<Integer>, FloatTensor>> it = cache.entrySet().iterator();
         while (size[0] > limitBytes && cache.size() > 1 && it.hasNext()) {
@@ -131,19 +142,31 @@ public class MemoryTileStore {
     FloatTensor getCachedWindow(String id, int[] windowIndex) {
         LinkedHashMap<List<Integer>, FloatTensor> cache = windowCaches.get(id);
         if (cache == null) return null;
-        return cache.get(toKey(windowIndex));
+        List<Integer> key = toKey(windowIndex);
+        // LinkedHashMap with access-order=true mutates on get — must lock reads too.
+        synchronized (cache) {
+            return cache.get(key);
+        }
     }
 
     boolean isWindowCached(String id, int[] windowIndex) {
         LinkedHashMap<List<Integer>, FloatTensor> cache = windowCaches.get(id);
-        return cache != null && cache.containsKey(toKey(windowIndex));
+        if (cache == null) return false;
+        List<Integer> key = toKey(windowIndex);
+        synchronized (cache) {
+            return cache.containsKey(key);
+        }
     }
 
     /** Remove all cached window outputs for every registered tensor. */
     public void clearAllCaches() {
         for (Map.Entry<String, LinkedHashMap<List<Integer>, FloatTensor>> e : windowCaches.entrySet()) {
-            e.getValue().clear();
-            cacheSizes.get(e.getKey())[0] = 0L;
+            LinkedHashMap<List<Integer>, FloatTensor> cache = e.getValue();
+            long[] size = cacheSizes.get(e.getKey());
+            synchronized (cache) {
+                cache.clear();
+                if (size != null) size[0] = 0L;
+            }
         }
     }
 

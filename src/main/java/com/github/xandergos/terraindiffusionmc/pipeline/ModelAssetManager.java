@@ -3,7 +3,7 @@ package com.github.xandergos.terraindiffusionmc.pipeline;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
-import net.fabricmc.loader.api.FabricLoader;
+import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +41,14 @@ public final class ModelAssetManager {
     private static final Logger LOG = LoggerFactory.getLogger(ModelAssetManager.class);
     private static final String MANIFEST_RESOURCE_PATH = "/model-assets-manifest.json";
     private static final long PROGRESS_LOG_THRESHOLD_BYTES = 100L * 1024L * 1024L;
-    private static final Path MODEL_DIRECTORY = FabricLoader.getInstance()
-            .getGameDir()
-            .resolve("terrain-diffusion-models");
+    // Lazily resolved: FMLPaths is bound in the GAME classloader, but log4j's ThrowableProxy
+    // can re-load this class in the MC-BOOTSTRAP classloader (when formatting an unrelated
+    // stack trace). Eager static-init there would NPE because FMLPaths.GAMEDIR.get() is null
+    // in that classloader. The holder pattern defers the lookup to actual mod use.
+    private static final class ModelDirectoryHolder {
+        static final Path MODEL_DIRECTORY = FMLPaths.GAMEDIR.get()
+                .resolve("terrain-diffusion-models");
+    }
     private static final AtomicBoolean READY = new AtomicBoolean(false);
     private static final Gson GSON = new Gson();
     private static final Type MANIFEST_TYPE = new TypeToken<ModelAssetManifest>() {}.getType();
@@ -63,15 +68,15 @@ public final class ModelAssetManager {
                 return;
             }
             try {
-                Files.createDirectories(MODEL_DIRECTORY);
+                Files.createDirectories(ModelDirectoryHolder.MODEL_DIRECTORY);
                 ModelAssetManifest manifest = loadManifest();
                 String offlineHelpUrl = buildOfflineHelpUrl(manifest);
                 boolean shouldValidatePreExistingModels = TerrainDiffusionConfig.validateModel();
-                LOG.info("Preparing terrain diffusion model assets in {}", MODEL_DIRECTORY);
+                LOG.info("Preparing terrain diffusion model assets in {}", ModelDirectoryHolder.MODEL_DIRECTORY);
                 for (Map.Entry<String, ManifestAsset> assetEntry : manifest.assets.entrySet()) {
                     String fileName = assetEntry.getKey();
                     ManifestAsset assetMetadata = assetEntry.getValue();
-                    Path localAssetPath = MODEL_DIRECTORY.resolve(fileName);
+                    Path localAssetPath = ModelDirectoryHolder.MODEL_DIRECTORY.resolve(fileName);
                     ensureSingleAsset(localAssetPath, assetMetadata, manifest.revision, offlineHelpUrl, shouldValidatePreExistingModels);
                 }
                 LOG.info("Terrain diffusion model assets ready");
@@ -88,7 +93,7 @@ public final class ModelAssetManager {
      * Returns the local path for an asset in the model directory.
      */
     public static Path resolveAssetPath(String fileName) {
-        return MODEL_DIRECTORY.resolve(fileName);
+        return ModelDirectoryHolder.MODEL_DIRECTORY.resolve(fileName);
     }
 
     private static void ensureSingleAsset(
