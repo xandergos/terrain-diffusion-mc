@@ -1,7 +1,7 @@
 {
   "sea_level": 63,
   "disable_mob_generation": false,
-  "aquifers_enabled": true,
+  "aquifers_enabled": false,
   "ore_veins_enabled": false,
   "legacy_random_source": false,
   "default_block": {
@@ -20,30 +20,10 @@
     "size_vertical": 2
   },
   "noise_router": {
-    "barrier": {
-      "type": "minecraft:noise",
-      "noise": "minecraft:aquifer_barrier",
-      "xz_scale": 1.0,
-      "y_scale": 0.5
-    },
-    "fluid_level_floodedness": {
-      "type": "minecraft:noise",
-      "noise": "minecraft:aquifer_fluid_level_floodedness",
-      "xz_scale": 1.0,
-      "y_scale": 0.67
-    },
-    "fluid_level_spread": {
-      "type": "minecraft:noise",
-      "noise": "minecraft:aquifer_fluid_level_spread",
-      "xz_scale": 1.0,
-      "y_scale": 0.7142857142857143
-    },
-    "lava": {
-      "type": "minecraft:noise",
-      "noise": "minecraft:aquifer_lava",
-      "xz_scale": 1.0,
-      "y_scale": 1.0
-    },
+    "barrier": 0,
+    "fluid_level_floodedness": 0,
+    "fluid_level_spread": 0,
+    "lava": 0,
     "temperature": 0,
     "vegetation": 0,
     "continents": 0,
