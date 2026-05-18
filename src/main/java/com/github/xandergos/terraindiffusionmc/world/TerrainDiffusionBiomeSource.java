@@ -1,5 +1,6 @@
 package com.github.xandergos.terraindiffusionmc.world;
 
+import com.github.xandergos.terraindiffusionmc.config.BiomeRegionConfig;
 import com.github.xandergos.terraindiffusionmc.config.TerrainDiffusionConfig;
 import com.github.xandergos.terraindiffusionmc.pipeline.BiomeClassifier;
 import com.github.xandergos.terraindiffusionmc.pipeline.LocalTerrainProvider;
@@ -214,6 +215,15 @@ public class TerrainDiffusionBiomeSource extends BiomeSource {
         map.put((short) 252, bwgOrFallback(biomeLookup, BWG_WHITE_MANGROVE_MARSHES,    Biomes.SWAMP));
         map.put((short) 253, bwgOrFallback(biomeLookup, BWG_WINDSWEPT_DESERT,          Biomes.DESERT));
         map.put((short) 254, bwgOrFallback(biomeLookup, BWG_ZELKOVA_FOREST,            Biomes.FOREST));
+
+        // Install data-driven biome regions if biome-regions.json was loaded.
+        // buildCompiled() resolves ResourceKeys and returns holders for any IDs >= 300.
+        BiomeRegionConfig.BuildResult regionBuild = BiomeRegionConfig.buildCompiled(biomeLookup);
+        if (regionBuild != null) {
+            map.putAll(regionBuild.additionalBiomes);
+            BiomeClassifier.compiledRegions = regionBuild.regions;
+        }
+
         this.biomeIdMap = Map.copyOf(map);
     }
 

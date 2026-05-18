@@ -1,33 +1,138 @@
 package com.github.xandergos.terraindiffusionmc.pipeline;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 /**
- * Rule-based biome classifier port of _classify_biome in minecraft_api.py.
- *
- * <p>Uses fixed-seed FastNoiseLite instances for climate and elevation noise perturbations.
- * Biome IDs match the Python server's _BIOME_ID mapping.
+ * Data-driven biome classifier. Surface biomes are selected from regions defined in
+ * biome-regions.json (loaded via {@link #compiledRegions}). Cave biomes remain hardcoded
+ * via {@link #classifyCaveBiome}.
  */
 public final class BiomeClassifier {
 
-    // Fixed-seed noise instances (matching Python's module-level _TEMP_NOISE etc.)
+    // Variable indices for the data-driven region system
+    public static final int VAR_TEMPERATURE   = 0;
+    public static final int VAR_PRECIPITATION = 1;
+    public static final int VAR_ELEVATION     = 2;
+    public static final int VAR_SLOPE         = 3;
+    public static final int VAR_COUNT         = 4;
+
+    public static int varIndex(String name) {
+        switch (name) {
+            case "temperature":   return VAR_TEMPERATURE;
+            case "precipitation": return VAR_PRECIPITATION;
+            case "elevation":     return VAR_ELEVATION;
+            case "slope":         return VAR_SLOPE;
+            default:              return -1;
+        }
+    }
+
+    /**
+     * Compiled form of a biome region. Set by {@code BiomeRegionConfig.buildCompiled()} via
+     * the BiomeSource constructor; read (without locking) in the classify hot loop.
+     */
+    public static final class CompiledRegion {
+        // Per-variable normalization scale for distance computation
+        private static final float[] DIST_SCALES = {60f, 2000f, 6000f, 1.5f};
+
+        public final String name;
+        public final float[] min;         // [VAR_COUNT] inclusive lower bounds
+        public final float[] max;         // [VAR_COUNT] inclusive upper bounds
+        public final short[] biomeIds;    // biome pool
+        public final float[] priorities;  // per-biome priority (parallel to biomeIds)
+
+        public CompiledRegion(String name, float[] min, float[] max, short[] biomeIds, float[] priorities) {
+            this.name = name;
+            this.min = min;
+            this.max = max;
+            this.biomeIds = biomeIds;
+            this.priorities = priorities;
+        }
+
+        public boolean matches(float[] vars) {
+            for (int i = 0; i < VAR_COUNT; i++) {
+                if (vars[i] < min[i] || vars[i] > max[i]) return false;
+            }
+            return true;
+        }
+
+        /** Normalized L1 distance from vars to the nearest point inside this region. */
+        public float distanceTo(float[] vars) {
+            float dist = 0f;
+            for (int i = 0; i < VAR_COUNT; i++) {
+                dist += Math.max(0f, min[i] - vars[i]) / DIST_SCALES[i];
+                dist += Math.max(0f, vars[i] - max[i]) / DIST_SCALES[i];
+            }
+            return dist;
+        }
+    }
+
+    /** Data-driven region array. Written once by the BiomeSource constructor; read-only thereafter. */
+    public static volatile CompiledRegion[] compiledRegions = null;
+
     private static final FastNoiseLite TEMP_NOISE, TEMP_NOISE_FINE;
     private static final FastNoiseLite PRECIP_NOISE;
-    private static final FastNoiseLite SNOW_NOISE, SNOW_NOISE_FINE;
-    private static final FastNoiseLite BIOME_VARIANT_NOISE;
     private static final FastNoiseLite CAVE_BIOME_NOISE;
     private static final FastNoiseLite DEEP_DARK_NOISE;
+    /**
+     * Cellular/Voronoi noise and domain-warp noise for spatially-coherent biome patch selection.
+     * Re-initialized by {@link #configureNoise} when biome-regions.json is loaded.
+     * {@code WARP_NOISE} is null when domain warp is disabled (amplitude == 0).
+     */
+    private static volatile FastNoiseLite CELL_NOISE;
+    private static volatile FastNoiseLite WARP_NOISE;
+    // Per-thread mutable coordinate for DomainWarp; avoids allocation in the hot loop.
+    private static final ThreadLocal<FastNoiseLite.Vector2> WARP_COORD =
+            ThreadLocal.withInitial(() -> new FastNoiseLite.Vector2(0f, 0f));
 
     static {
         TEMP_NOISE = makeFnl(12345, 1f/500f, 3, 2f, 0.5f);
         TEMP_NOISE_FINE = makeFnl(54321, 1f/128f, 2, 2f, 0.5f);
         PRECIP_NOISE = makeFnl(12345, 1f/500f, 5, 2f, 0.5f);
-        SNOW_NOISE = makeFnl(12345, 1f/500f, 3, 2f, 0.5f);
-        SNOW_NOISE_FINE = makeFnl(54321, 1f/128f, 2, 2f, 0.5f);
-        BIOME_VARIANT_NOISE = makeFnl(77777, 1f/300f, 3, 2f, 0.5f);
         // Cave-biome region noise: smooth blob-shaped patches of lush vs dripstone.
         // Low frequency (~180-block scale) so a column has consistent cave biome through Y.
         CAVE_BIOME_NOISE = makeFnl(99991, 1f/180f, 3, 2f, 0.5f);
         // Deep dark: separate higher-octave noise for narrow, scattered patches.
         DEEP_DARK_NOISE = makeFnl(13577, 1f/250f, 4, 2f, 0.5f);
+
+        configureNoise(300f, 200f, 80f, 2, 2f, 0.5f);
+    }
+
+    /**
+     * (Re-)initialize the cellular and domain-warp noise instances.
+     * Called once from the static block with defaults, then again from
+     * {@code BiomeRegionConfig.load()} with user-configured values.
+     *
+     * @param cellScale      spatial scale of the Voronoi cells in pixels
+     * @param warpScale      spatial scale of the domain-warp noise in pixels
+     * @param warpAmp        maximum coordinate displacement; 0 disables warping
+     * @param warpOctaves    fractal octave count for the domain warp
+     * @param warpLacunarity frequency multiplier between warp octaves
+     * @param warpGain       amplitude multiplier between warp octaves
+     */
+    public static void configureNoise(float cellScale, float warpScale, float warpAmp,
+                                      int warpOctaves, float warpLacunarity, float warpGain) {
+        FastNoiseLite cell = new FastNoiseLite(22222);
+        cell.SetNoiseType(FastNoiseLite.NoiseType.Cellular);
+        cell.SetFrequency(1f / Math.max(1f, cellScale));
+        cell.SetCellularReturnType(FastNoiseLite.CellularReturnType.CellValue);
+        CELL_NOISE = cell;
+
+        if (warpAmp == 0f) {
+            WARP_NOISE = null;
+        } else {
+            FastNoiseLite warp = new FastNoiseLite(33333);
+            warp.SetDomainWarpType(FastNoiseLite.DomainWarpType.OpenSimplex2);
+            warp.SetFrequency(1f / Math.max(1f, warpScale));
+            warp.SetDomainWarpAmp(warpAmp);
+            warp.SetFractalType(FastNoiseLite.FractalType.DomainWarpProgressive);
+            warp.SetFractalOctaves(Math.max(1, warpOctaves));
+            warp.SetFractalLacunarity(warpLacunarity);
+            warp.SetFractalGain(warpGain);
+            WARP_NOISE = warp;
+        }
     }
 
     private static FastNoiseLite makeFnl(int seed, float freq, int oct, float lac, float gain) {
@@ -41,48 +146,8 @@ public final class BiomeClassifier {
         return fnl;
     }
 
-    // Vanilla biome IDs
-    static final short PLAINS = 1, SNOWY_PLAINS = 3, DESERT = 5, SWAMP = 6;
-    static final short FOREST = 8, TAIGA = 15, SNOWY_TAIGA = 16, SAVANNA = 17;
-    static final short WINDSWEPT_HILLS = 19, JUNGLE = 23, BADLANDS = 26, MEADOW = 29;
-    static final short GROVE = 31, SNOWY_SLOPES = 32, FROZEN_PEAKS = 33, STONY_PEAKS = 35;
-    static final short WARM_OCEAN = 41, OCEAN = 44, COLD_OCEAN = 46, FROZEN_OCEAN = 48;
-    static final short FOREST_SPARSE = 108, TAIGA_SPARSE = 115, SNOWY_TAIGA_SPARSE = 116;
-
-    // Oh The Biomes We've Gone biome IDs (200–254)
-    static final short BWG_ALLIUM_SHRUBLAND = 200, BWG_AMARANTH_GRASSLAND = 201;
-    static final short BWG_ARAUCARIA_SAVANNA = 202, BWG_ASPEN_BOREAL = 203;
-    static final short BWG_ATACAMA_OUTBACK = 204, BWG_BAOBAB_SAVANNA = 205;
-    static final short BWG_BASALT_BARRERA = 206, BWG_BAYOU = 207;
-    static final short BWG_BLACK_FOREST = 208, BWG_CANADIAN_SHIELD = 209;
-    static final short BWG_CIKA_WOODS = 210, BWG_COCONINO_MEADOW = 211;
-    static final short BWG_CONIFEROUS_FOREST = 212, BWG_CRAG_GARDENS = 213;
-    static final short BWG_CRIMSON_TUNDRA = 214, BWG_CYPRESS_SWAMPLANDS = 215;
-    static final short BWG_CYPRESS_WETLANDS = 216, BWG_DACITE_RIDGES = 217;
-    static final short BWG_DACITE_SHORE = 218, BWG_DEAD_SEA = 219;
-    static final short BWG_EBONY_WOODS = 220, BWG_ENCHANTED_TANGLE = 221;
-    static final short BWG_ERODED_BOREALIS = 222, BWG_FIRECRACKER_CHAPARRAL = 223;
-    static final short BWG_FORGOTTEN_FOREST = 224, BWG_FRAGMENT_JUNGLE = 225;
-    static final short BWG_FROSTED_CONIFEROUS_FOREST = 226, BWG_FROSTED_TAIGA = 227;
-    static final short BWG_HOWLING_PEAKS = 228, BWG_IRONWOOD_GOUR = 229;
-    static final short BWG_JACARANDA_JUNGLE = 230, BWG_LUSH_STACKS = 231;
-    static final short BWG_MAPLE_TAIGA = 232, BWG_MOJAVE_DESERT = 233;
-    static final short BWG_ORCHARD = 234, BWG_OVERGROWTH_WOODLANDS = 235;
-    static final short BWG_PALE_BOG = 236, BWG_PRAIRIE = 237;
-    static final short BWG_PUMPKIN_VALLEY = 238, BWG_RAINBOW_BEACH = 239;
-    static final short BWG_RED_ROCK_VALLEY = 240, BWG_RED_ROCK_PEAKS = 241;
-    static final short BWG_REDWOOD_THICKET = 242, BWG_ROSE_FIELDS = 243;
-    static final short BWG_RUGGED_BADLANDS = 244, BWG_SAKURA_GROVE = 245;
-    static final short BWG_SHATTERED_GLACIER = 246, BWG_SIERRA_BADLANDS = 247;
-    static final short BWG_SKYRIS_VALE = 248, BWG_TROPICAL_RAINFOREST = 249;
-    static final short BWG_TEMPERATE_GROVE = 250, BWG_WEEPING_WITCH_FOREST = 251;
-    static final short BWG_WHITE_MANGROVE_MARSHES = 252, BWG_WINDSWEPT_DESERT = 253;
-    static final short BWG_ZELKOVA_FOREST = 254;
-
-    // Cave biomes
-    static final short LUSH_CAVES = 60;
-    static final short DRIPSTONE_CAVES = 61;
-    static final short DEEP_DARK = 62;
+    static final short PLAINS = 1;
+    static final short LUSH_CAVES = 60, DRIPSTONE_CAVES = 61, DEEP_DARK = 62;
 
     /**
      * Classify a cave biome at the given block-space coordinates, or return
@@ -158,10 +223,89 @@ public final class BiomeClassifier {
                                     float[] elevPadded, int H, int W, float pixelSizeM) {
         if (climate == null || climate.length < 4 * H * W) {
             short[] out = new short[H * W];
-            for (int i = 0; i < H * W; i++) out[i] = PLAINS;
+            Arrays.fill(out, PLAINS);
             return out;
         }
         return classifyWithSlope(elev, climate, i0, j0, computeSlopeRatio(elevPadded, H, W, pixelSizeM), H, W);
+    }
+
+    /** Per-pixel climate and region debug info returned by {@link #debugClassify}. */
+    public static final class DebugInfo {
+        public final float temperature;
+        public final float precipitation;
+        public final float elevation;
+        public final float slope;
+        /** Names of all regions whose conditions matched the climate variables. */
+        public final List<String> matchingRegions;
+        /** Closest region used as fallback when no region matched; null otherwise. */
+        public final String fallbackRegion;
+
+        DebugInfo(float temperature, float precipitation, float elevation, float slope,
+                  List<String> matchingRegions, String fallbackRegion) {
+            this.temperature = temperature;
+            this.precipitation = precipitation;
+            this.elevation = elevation;
+            this.slope = slope;
+            this.matchingRegions = matchingRegions;
+            this.fallbackRegion = fallbackRegion;
+        }
+    }
+
+    /**
+     * Compute debug classification info for a single native-resolution pixel.
+     * Applies the same noise perturbations as the hot classify path.
+     *
+     * @param nx          column pixel coordinate (matches noise-sampling coords in classifyWithSlope)
+     * @param ny          row pixel coordinate
+     * @param elev3x3     elevation for a 3×3 region centred at (nx,ny), row-major, 9 elements;
+     *                    returned by {@code getPipelineData(pz-1,px-1,pz+2,px+2)}
+     * @param climate3x3  climate channels for the same 3×3 region, channel-major
+     *                    ({@code climate[ch*9 + row*3 + col]}), at least 3×9 elements
+     * @param pixelSizeM  physical size of one pixel in metres (= nativeResolution / scale)
+     */
+    public static DebugInfo debugClassify(float nx, float ny,
+                                          float[] elev3x3, float[] climate3x3,
+                                          float pixelSizeM) {
+        final int CENTER = 4; // row=1, col=1 in the 3×3 grid
+
+        float tempNoise    = 0.4f * TEMP_NOISE.GetNoise(nx, ny) + 0.2f * TEMP_NOISE_FINE.GetNoise(nx, ny);
+        float precipFactor = 1f + 0.2f * PRECIP_NOISE.GetNoise(nx, ny);
+
+        float temp   = climate3x3[CENTER] + tempNoise;                    // ch 0
+        float precip = Math.max(0f, climate3x3[2 * 9 + CENTER]) * precipFactor; // ch 2
+        float elev   = elev3x3[CENTER];
+        float slope  = computeSlopeRatio(elev3x3, 1, 1, pixelSizeM)[0];
+
+        float[] vars = new float[VAR_COUNT];
+        vars[VAR_TEMPERATURE]   = temp;
+        vars[VAR_PRECIPITATION] = precip;
+        vars[VAR_ELEVATION]     = elev;
+        vars[VAR_SLOPE]         = slope;
+
+        CompiledRegion[] regions = compiledRegions;
+        List<String> matching = new ArrayList<>();
+        String fallback = null;
+
+        if (regions != null) {
+            for (CompiledRegion r : regions) {
+                if (r.matches(vars)) matching.add(r.name);
+            }
+            if (matching.isEmpty()) {
+                float bestDist = Float.MAX_VALUE;
+                int bestIdx = -1;
+                for (int i = 0; i < regions.length; i++) {
+                    if (regions[i].biomeIds.length == 0) continue;
+                    float d = regions[i].distanceTo(vars);
+                    if (d < bestDist) { bestDist = d; bestIdx = i; }
+                }
+                if (bestIdx >= 0) {
+                    fallback = String.format("%s (dist=%.3f)", regions[bestIdx].name, bestDist);
+                }
+            }
+        }
+
+        return new DebugInfo(temp, precip, elev, slope,
+                Collections.unmodifiableList(matching), fallback);
     }
 
     /**
@@ -174,240 +318,108 @@ public final class BiomeClassifier {
                                       float[] slopeRatio, int H, int W) {
         if (climate == null || climate.length < 4 * H * W) {
             short[] out = new short[H * W];
-            for (int i = 0; i < H * W; i++) out[i] = PLAINS;
+            Arrays.fill(out, PLAINS);
             return out;
         }
         short[] out = new short[H * W];
+
+        CompiledRegion[] regions = compiledRegions; // read volatile once
+        if (regions == null || regions.length == 0) {
+            Arrays.fill(out, PLAINS);
+            return out;
+        }
+
+        // Pool arrays allocated once per call, reused across pixels.
+        final int MAX_POOL = 64;
+        short[] poolBiomes  = new short[MAX_POOL];
+        float[] poolPriSum  = new float[MAX_POOL];
+        int[]   poolCount   = new int[MAX_POOL];
+        float[] vars        = new float[VAR_COUNT];
+        // Snapshot volatile noise refs once so the inner loop doesn't re-read them.
+        FastNoiseLite cellNoise = CELL_NOISE;
+        FastNoiseLite warpNoise = WARP_NOISE;
+
         for (int r = 0; r < H; r++) {
             for (int c = 0; c < W; c++) {
                 int idx = r * W + c;
                 float nx = j0 + c, ny = i0 + r;
 
-                // Inline noise (eliminates separate noise-pass + 3 temporary arrays)
-                float tnc = TEMP_NOISE.GetNoise(nx, ny);
-                float tnf = TEMP_NOISE_FINE.GetNoise(nx, ny);
-                float tempNoiseVal = 0.4f * tnc + 0.2f * tnf;
+                float tempNoiseVal       = 0.4f * TEMP_NOISE.GetNoise(nx, ny) + 0.2f * TEMP_NOISE_FINE.GetNoise(nx, ny);
                 float precipNoiseFactVal = 1.0f + 0.2f * PRECIP_NOISE.GetNoise(nx, ny);
-                float snc = SNOW_NOISE.GetNoise(nx, ny);
-                float snf = SNOW_NOISE_FINE.GetNoise(nx, ny);
-                float snowNoiseVal = 3.0f * snc + 2.0f * snf;
 
-                float elevVal   = elev[idx];
-                float altM      = Math.max(0f, elevVal);
-                float slope     = slopeRatio[idx];
+                vars[VAR_TEMPERATURE]   = climate[idx] + tempNoiseVal;
+                vars[VAR_PRECIPITATION] = Math.max(0f, climate[2 * H * W + idx]) * precipNoiseFactVal;
+                vars[VAR_ELEVATION]     = elev[idx];
+                vars[VAR_SLOPE]         = slopeRatio[idx];
 
-                // Climate channels: [0]=temp, [1]=t_season, [2]=precip, [3]=p_cv
-                float temp     = climate[idx] + tempNoiseVal;
-                float tSeason  = climate[H * W + idx];
-                float precip   = Math.max(0f, climate[2 * H * W + idx]) * precipNoiseFactVal;
-                float pCV      = climate[3 * H * W + idx];
+                int poolSize = 0;
 
-                // Derived climate variables
-                float tStd     = tSeason / 100f;
-                float tEff     = Math.max(0f, temp + 0.5f * tStd);
-                float pet      = Math.max(250f, 250f + 25f * tEff + 0.7f * tEff * tEff);
-                float aridity  = precip / Math.max(1f, pet);
-                float seasonPenalty = 1f - 0.35f * Math.min(1f, pCV / 100f);
-                float treeMoisture = aridity * seasonPenalty;
+                // Accumulate biomes from all matching regions; average priority for duplicates.
+                for (CompiledRegion region : regions) {
+                    if (!region.matches(vars)) continue;
+                    for (int k = 0; k < region.biomeIds.length && poolSize < MAX_POOL; k++) {
+                        short bid = region.biomeIds[k];
+                        float pri = region.priorities[k];
+                        int found = -1;
+                        for (int p = 0; p < poolSize; p++) {
+                            if (poolBiomes[p] == bid) { found = p; break; }
+                        }
+                        if (found >= 0) {
+                            poolPriSum[found] += pri;
+                            poolCount[found]++;
+                        } else {
+                            poolBiomes[poolSize] = bid;
+                            poolPriSum[poolSize] = pri;
+                            poolCount[poolSize]  = 1;
+                            poolSize++;
+                        }
+                    }
+                }
 
-                // Growing season
-                float amplitude = tStd * 1.414f;
-                float growingSeason;
-                if (amplitude < 0.1f) {
-                    growingSeason = temp > 5f ? 365f : 0f;
+                // Fall back to closest region when no region matches.
+                if (poolSize == 0) {
+                    float bestDist = Float.MAX_VALUE;
+                    int bestIdx = -1;
+                    for (int ri = 0; ri < regions.length; ri++) {
+                        if (regions[ri].biomeIds.length == 0) continue;
+                        float d = regions[ri].distanceTo(vars);
+                        if (d < bestDist) { bestDist = d; bestIdx = ri; }
+                    }
+                    if (bestIdx >= 0) {
+                        CompiledRegion closest = regions[bestIdx];
+                        for (int k = 0; k < closest.biomeIds.length && poolSize < MAX_POOL; k++) {
+                            poolBiomes[poolSize] = closest.biomeIds[k];
+                            poolPriSum[poolSize] = closest.priorities[k];
+                            poolCount[poolSize]  = 1;
+                            poolSize++;
+                        }
+                    }
+                }
+
+                short biome;
+                if (poolSize == 0) {
+                    biome = PLAINS;
                 } else {
-                    float x = (5f - temp) / amplitude;
-                    if (x <= -1f) growingSeason = 365f;
-                    else if (x >= 1f) growingSeason = 0f;
-                    else growingSeason = 365f * (0.5f - (float) Math.asin(Math.max(-1f, Math.min(1f, x))) / (float) Math.PI);
-                }
-
-                float gsFactor = Math.max(0f, Math.min(1f, (growingSeason - 60f) / (150f - 60f)));
-                float effTreeMoisture = treeMoisture * gsFactor;
-
-                // Slope-dependent bare threshold
-                float moistureFactor = Math.max(0f, Math.min(1f, (treeMoisture - 0.35f) / 0.45f));
-                float bareThreshold = 0.7f + (1.19f - 0.7f) * moistureFactor;
-
-                // Tree coverage classification
-                boolean treesNone = effTreeMoisture < 0.2f;
-                boolean tooArid   = treeMoisture < 0.05f;
-                boolean tooCold   = growingSeason < 60f;
-                boolean barren    = tooArid || tooCold;
-                boolean treesSparse    = !treesNone && effTreeMoisture < 0.5f;
-                boolean treesForest    = !treesNone && effTreeMoisture >= 0.5f && effTreeMoisture < 0.8f;
-                boolean treesDense     = !treesNone && effTreeMoisture >= 0.8f && effTreeMoisture < 1.3f;
-                boolean treesRainforest = !treesNone && effTreeMoisture >= 1.3f;
-
-                // Slope overrides
-                boolean slopeMedium = slope >= 0.62f && slope < bareThreshold;
-                boolean slopeBare   = slope >= bareThreshold;
-                if (slopeMedium) {
-                    if (treesForest || treesDense || treesRainforest) { treesSparse = true; }
-                    treesForest = treesForest && false; treesDense = false; treesRainforest = false;
-                }
-                if (slopeBare) {
-                    treesNone = true; treesSparse = false; treesForest = false;
-                    treesDense = false; treesRainforest = false;
-                }
-
-                // Snow classification
-                float snowTemp = temp + snowNoiseVal;
-                boolean isSteep = slope > 0.78f;
-                boolean hasSnow = snowTemp < 0f && precip > 150f && !isSteep;
-
-                // Elevation/temp bands
-                boolean isOcean   = elevVal < 0f;
-                boolean mountains = altM > 2500f;
-                boolean lowland   = altM < 200f;
-                boolean frozen    = temp < -5f;
-                boolean cold      = temp >= -5f && temp < 5f;
-                boolean cool      = temp >= 5f  && temp < 12f;
-                boolean temperate = temp >= 12f && temp < 20f;
-                boolean warm      = temp >= 20f && temp < 26f;
-                boolean hot       = temp >= 26f;
-
-                short biome = PLAINS;
-
-                if (isOcean) {
-                    if (frozen) biome = FROZEN_OCEAN;
-                    else if (cold) biome = COLD_OCEAN;
-                    else if (warm || hot) biome = WARM_OCEAN;
-                    else biome = OCEAN;
-                } else if (mountains) {
-                    if (slopeBare) {
-                        biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
-                    } else if (hasSnow) {
-                        if (treesNone) biome = SNOWY_SLOPES;
-                        else if (treesSparse || treesForest) biome = SNOWY_TAIGA_SPARSE;
-                        else biome = SNOWY_TAIGA;
-                    } else if (treesNone) {
-                        if (barren) biome = WINDSWEPT_HILLS;
-                        else if (treeMoisture < 0.35f || precip < 350f) biome = GROVE;
-                        else biome = PLAINS;
-                    } else if (treesSparse || treesForest) {
-                        biome = TAIGA_SPARSE;
-                    } else {
-                        biome = TAIGA;
+                    float total = 0f;
+                    for (int p = 0; p < poolSize; p++) {
+                        poolPriSum[p] /= poolCount[p];
+                        total += poolPriSum[p];
                     }
-                } else {
-                    // Lowland/midland
-                    if (hasSnow && treesNone) {
-                        biome = SNOWY_PLAINS;
-                    } else if (hasSnow) {
-                        biome = (treesSparse || treesForest) ? SNOWY_TAIGA_SPARSE : SNOWY_TAIGA;
-                    } else if (treesNone) {
-                        if (warm || hot) biome = DESERT;
-                        else if (barren && !lowland && (cold || cool || temperate)) biome = GROVE;
-                        else if (treeMoisture < 0.35f || precip < 350f) biome = GROVE;
-                        else biome = PLAINS;
-                    } else if (treesSparse || treesForest) {
-                        if (hot) biome = JUNGLE;
-                        else if (warm && treesSparse && !slopeMedium) biome = SAVANNA;
-                        else if (warm && treesForest) biome = FOREST_SPARSE;
-                        else if (temperate) biome = FOREST_SPARSE;
-                        else biome = TAIGA_SPARSE;
-                    } else if (treesDense) {
-                        if (hot) biome = JUNGLE;
-                        else if (warm && lowland) biome = SWAMP;
-                        else if (cool || cold) biome = TAIGA;
-                        else biome = FOREST;
-                    } else { // rainforest
-                        if (hot || (warm && temp >= 18f && tStd < 5f)) biome = JUNGLE;
-                        else if (lowland) biome = SWAMP;
-                        else if (cool || cold) biome = TAIGA;
-                        else biome = FOREST;
+                    float cx = nx, cy = ny;
+                    if (warpNoise != null) {
+                        FastNoiseLite.Vector2 coord = WARP_COORD.get();
+                        coord.x = nx; coord.y = ny;
+                        warpNoise.DomainWarp(coord);
+                        cx = coord.x; cy = coord.y;
                     }
-                }
-
-                // Bare slope override for lowland/non-mountain cliffs
-                if (slopeBare && !isOcean && !mountains) {
-                    biome = hasSnow ? FROZEN_PEAKS : STONY_PEAKS;
-                }
-
-                // BWG biome variant selection – spatially-coherent override using low-frequency noise
-                float vn = BIOME_VARIANT_NOISE.GetNoise(nx, ny); // [-1, 1]
-                if (biome == PLAINS) {
-                    if      (vn < -0.667f) biome = BWG_ALLIUM_SHRUBLAND;
-                    else if (vn < -0.333f) biome = BWG_ROSE_FIELDS;
-                    else if (vn <  0.0f  ) biome = BWG_COCONINO_MEADOW;
-                    else if (vn <  0.333f) biome = BWG_PUMPKIN_VALLEY;
-                    else if (vn <  0.667f) biome = BWG_SKYRIS_VALE;
-                } else if (biome == FOREST) {
-                    if      (vn < -0.8f  ) biome = BWG_BLACK_FOREST;
-                    else if (vn < -0.6f  ) biome = BWG_EBONY_WOODS;
-                    else if (vn < -0.4f  ) biome = BWG_FORGOTTEN_FOREST;
-                    else if (vn < -0.2f  ) biome = BWG_SAKURA_GROVE;
-                    else if (vn <  0.0f  ) biome = BWG_WEEPING_WITCH_FOREST;
-                    else if (vn <  0.2f  ) biome = BWG_ZELKOVA_FOREST;
-                    else if (vn <  0.4f  ) biome = BWG_OVERGROWTH_WOODLANDS;
-                    else if (vn <  0.6f  ) biome = BWG_CIKA_WOODS;
-                    else if (vn <  0.8f  ) biome = BWG_LUSH_STACKS;
-                } else if (biome == FOREST_SPARSE) {
-                    if      (vn < -0.333f) biome = BWG_ORCHARD;
-                    else if (vn <  0.333f) biome = BWG_TEMPERATE_GROVE;
-                } else if (biome == TAIGA) {
-                    if      (vn < -0.6f  ) biome = BWG_CONIFEROUS_FOREST;
-                    else if (vn < -0.2f  ) biome = BWG_MAPLE_TAIGA;
-                    else if (vn <  0.2f  ) biome = BWG_REDWOOD_THICKET;
-                    else if (vn <  0.6f  ) biome = BWG_ASPEN_BOREAL;
-                } else if (biome == TAIGA_SPARSE) {
-                    if      (vn < -0.333f) biome = BWG_CONIFEROUS_FOREST;
-                    else if (vn <  0.333f) biome = BWG_MAPLE_TAIGA;
-                } else if (biome == SNOWY_PLAINS) {
-                    if (vn < 0.0f) biome = BWG_CRIMSON_TUNDRA;
-                } else if (biome == SNOWY_TAIGA) {
-                    if      (vn < -0.333f) biome = BWG_FROSTED_CONIFEROUS_FOREST;
-                    else if (vn <  0.333f) biome = BWG_ASPEN_BOREAL;
-                } else if (biome == SNOWY_TAIGA_SPARSE) {
-                    if (vn < 0.0f) biome = BWG_FROSTED_TAIGA;
-                } else if (biome == DESERT) {
-                    if (hot) {
-                        if      (vn < -0.5f  ) biome = BWG_ATACAMA_OUTBACK;
-                        else if (vn <  0.0f  ) biome = BWG_MOJAVE_DESERT;
-                        else if (vn <  0.5f  ) biome = BWG_WINDSWEPT_DESERT;
-                    } else { // warm
-                        if      (vn < -0.667f) biome = BWG_AMARANTH_GRASSLAND;
-                        else if (vn < -0.333f) biome = BWG_PRAIRIE;
-                        else if (vn <  0.0f  ) biome = BWG_RED_ROCK_VALLEY;
-                        else if (vn <  0.333f) biome = BWG_RUGGED_BADLANDS;
-                        else if (vn <  0.667f) biome = BWG_SIERRA_BADLANDS;
+                    float cellVal = (cellNoise.GetNoise(cx, cy) + 1f) * 0.5f; // [0, 1]
+                    float target  = cellVal * total;
+                    float cumul   = 0f;
+                    biome = poolBiomes[poolSize - 1];
+                    for (int p = 0; p < poolSize; p++) {
+                        cumul += poolPriSum[p];
+                        if (cumul >= target) { biome = poolBiomes[p]; break; }
                     }
-                } else if (biome == SWAMP) {
-                    if (warm) {
-                        if      (vn < -0.5f  ) biome = BWG_BAYOU;
-                        else if (vn <  0.0f  ) biome = BWG_CYPRESS_SWAMPLANDS;
-                        else if (vn <  0.5f  ) biome = BWG_CYPRESS_WETLANDS;
-                        else if (vn <  0.75f ) biome = BWG_WHITE_MANGROVE_MARSHES;
-                    } else {
-                        if (vn < 0.0f) biome = BWG_PALE_BOG;
-                    }
-                } else if (biome == SAVANNA) {
-                    if      (vn < -0.6f  ) biome = BWG_ARAUCARIA_SAVANNA;
-                    else if (vn < -0.2f  ) biome = BWG_BAOBAB_SAVANNA;
-                    else if (vn <  0.2f  ) biome = BWG_IRONWOOD_GOUR;
-                    else if (vn <  0.6f  ) biome = BWG_FIRECRACKER_CHAPARRAL;
-                } else if (biome == JUNGLE) {
-                    if      (vn < -0.667f) biome = BWG_JACARANDA_JUNGLE;
-                    else if (vn < -0.333f) biome = BWG_TROPICAL_RAINFOREST;
-                    else if (vn <  0.0f  ) biome = BWG_ENCHANTED_TANGLE;
-                    else if (vn <  0.333f) biome = BWG_FRAGMENT_JUNGLE;
-                    else if (vn <  0.667f) biome = BWG_CRAG_GARDENS;
-                } else if (biome == GROVE) {
-                    if      (vn < -0.333f) biome = BWG_CANADIAN_SHIELD;
-                    else if (vn <  -0.28f) biome = BWG_ERODED_BOREALIS; // ~2.5% of grove tiles
-                } else if (biome == WINDSWEPT_HILLS) {
-                    if (vn < 0.0f) biome = BWG_BASALT_BARRERA;
-                } else if (biome == STONY_PEAKS) {
-                    if      (vn < -0.5f  ) biome = BWG_RED_ROCK_PEAKS;
-                    else if (vn <  0.0f  ) biome = BWG_DACITE_RIDGES;
-                    else if (vn <  0.5f  ) biome = BWG_HOWLING_PEAKS;
-                } else if (biome == FROZEN_PEAKS) {
-                    if (vn < 0.0f) biome = BWG_SHATTERED_GLACIER;
-                } else if (biome == WARM_OCEAN) {
-                    if      (vn < -0.5f  ) biome = BWG_RAINBOW_BEACH;
-                    else if (vn <  0.45f ) biome = BWG_DACITE_SHORE;
-                    else if (vn <  0.5f  ) biome = BWG_DEAD_SEA; // ~2.5% of warm ocean tiles
                 }
 
                 out[idx] = biome;
