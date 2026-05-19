@@ -585,6 +585,7 @@
         <button class="active" id="mode-relief">Relief</button>
         <button id="mode-elevation">Elevation</button>
         <button id="mode-temperature">Temperature</button>
+        <button id="mode-biome">Biome</button>
         <span class="panel-info" id="detail-info">click coarse map to load</span>
       </div>
       <div class="nav-grid">
@@ -612,6 +613,63 @@
   const COARSE_WINDOW_MAX = 120;
   const DETAIL_PAN_STEP = 256;
   const DETAIL_SIZE = 1024;
+
+  const BIOME_NAMES = {
+    1: 'plains',
+    2: 'sunflower_plains',
+    3: 'snowy_plains',
+    4: 'ice_spikes',
+    5: 'desert',
+    6: 'swamp',
+    7: 'mangrove_swamp',
+    8: 'forest',
+    9: 'flower_forest',
+    10: 'birch_forest',
+    11: 'dark_forest',
+    12: 'old_growth_birch_forest',
+    13: 'old_growth_pine_taiga',
+    14: 'old_growth_spruce_taiga',
+    15: 'taiga',
+    16: 'snowy_taiga',
+    17: 'savanna',
+    18: 'savanna_plateau',
+    19: 'windswept_hills',
+    20: 'windswept_gravelly_hills',
+    21: 'windswept_forest',
+    22: 'windswept_savanna',
+    23: 'jungle',
+    24: 'sparse_jungle',
+    25: 'bamboo_jungle',
+    26: 'badlands',
+    27: 'wooded_badlands',
+    28: 'eroded_badlands',
+    29: 'meadow',
+    30: 'cherry_grove',
+    31: 'grove',
+    32: 'snowy_slopes',
+    33: 'frozen_peaks',
+    34: 'jagged_peaks',
+    35: 'stony_peaks',
+    36: 'frozen_river',
+    37: 'river',
+    38: 'beach',
+    39: 'snowy_beach',
+    40: 'stony_shore',
+    41: 'warm_ocean',
+    42: 'lukewarm_ocean',
+    43: 'deep_lukewarm_ocean',
+    44: 'ocean',
+    45: 'deep_ocean',
+    46: 'cold_ocean',
+    47: 'deep_cold_ocean',
+    48: 'frozen_ocean',
+    49: 'deep_frozen_ocean',
+    50: 'mushroom_fields',
+    51: 'pale_garden',
+    108: 'forest_sparse',
+    115: 'taiga_sparse',
+    116: 'snowy_taiga_sparse',
+  };
 
   const CHANNEL_META = [
     { ch: 0, name: 'Elev',    unit: 'm',  step: 50,   defMin: -8000, defMax: 8000 },
@@ -857,14 +915,19 @@
     if (state.detailCI === null) return;
     const { detailCI: ci, detailCJ: cj, detailPanI: pi, detailPanJ: pj, seed } = state;
     try {
-      const res = await fetch(`/api/detail_raw?ci=${ci}&cj=${cj}&detail_size=${DETAIL_SIZE}&pan_i=${pi}&pan_j=${pj}&_s=${seed}`);
+      const mode = state.detailMode;
+      const res = await fetch(`/api/detail_raw?ci=${ci}&cj=${cj}&detail_size=${DETAIL_SIZE}&pan_i=${pi}&pan_j=${pj}&mode=${mode}&_s=${seed}`);
       const h = parseInt(res.headers.get('X-Height'));
       const w = parseInt(res.headers.get('X-Width'));
       const hasTemp = res.headers.get('X-Has-Temp') === '1';
+      const hasBiome = res.headers.get('X-Has-Biome') === '1';
       const buf = await res.arrayBuffer();
+      const elevBytes = h * w * 2;
+      const tempBytes = hasTemp ? h * w * 4 : 0;
       state.detailRaw = {
         elev: new Int16Array(buf, 0, h * w),
-        temp: hasTemp ? new Float32Array(buf, h * w * 2, h * w) : null,
+        temp: hasTemp ? new Float32Array(buf, elevBytes, h * w) : null,
+        biome: hasBiome ? new Int16Array(buf, elevBytes + tempBytes, h * w) : null,
         h, w,
       };
     } catch (_) {}
@@ -955,13 +1018,20 @@
   // ── Detail hover ──
   detailImg.addEventListener('mousemove', (e) => {
     if (!state.detailRaw) return;
-    const { elev, temp, h, w } = state.detailRaw;
+    const { elev, temp, biome, h, w } = state.detailRaw;
     const rect = detailImg.getBoundingClientRect();
     const col = Math.floor((e.clientX - rect.left) / rect.width  * w);
     const row = Math.floor((e.clientY - rect.top)  / rect.height * h);
     if (row < 0 || row >= h || col < 0 || col >= w) return;
     const idx = row * w + col;
-    let html = `<div class="ht-row"><span class="ht-label">Elevation</span><span class="ht-val">${elev[idx]} m</span></div>`;
+    let html = '';
+    if (state.detailMode === 'biome' && biome) {
+      const biomeId = biome[idx];
+      const biomeName = BIOME_NAMES[biomeId] || `unknown_${biomeId}`;
+      html += `<div class="ht-row"><span class="ht-label">Biome</span><span class="ht-val">${biomeName}</span></div>`;
+      html += `<div class="ht-row"><span class="ht-label">Biome ID</span><span class="ht-val">${biomeId}</span></div>`;
+    }
+    html += `<div class="ht-row"><span class="ht-label">Elevation</span><span class="ht-val">${elev[idx]} m</span></div>`;
     if (temp) html += `<div class="ht-row"><span class="ht-label">Temperature</span><span class="ht-val">${temp[idx].toFixed(2)}°</span></div>`;
     showTooltip(e, html);
   });
@@ -994,10 +1064,10 @@
   }
 
   // ── Detail mode ──
-  ['relief', 'elevation', 'temperature'].forEach(mode => {
+  ['relief', 'elevation', 'temperature', 'biome'].forEach(mode => {
     document.getElementById(`mode-${mode}`).addEventListener('click', () => {
       state.detailMode = mode;
-      ['relief','elevation','temperature'].forEach(m =>
+      ['relief','elevation','temperature','biome'].forEach(m =>
         document.getElementById(`mode-${m}`).classList.toggle('active', m === mode));
       loadDetail();
     });
