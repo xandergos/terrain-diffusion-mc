@@ -32,14 +32,14 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
 
         HeightmapData data = LocalTerrainProvider.getInstance().fetchHeightmap(blockStartZ, blockStartX, blockEndZ, blockEndX);
         if (data == null || data.heightmap == null) {
-            return -y;
+            return 1.0;
         }
 
         int localX = Math.max(0, Math.min(data.width  - 1, x - blockStartX));
         int localZ = Math.max(0, Math.min(data.height - 1, z - blockStartZ));
 
         int targetHeight = HeightConverter.convertToMinecraftHeight(data.heightmap[localZ][localX]);
-        return targetHeight - y;
+        return y < targetHeight ? 1.0 : -1.0;
     }
 
     private static final class FillContext {
@@ -88,7 +88,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
 
             HeightmapData data = ctx.data;
             if (data == null || data.heightmap == null) {
-                densities[i] = -y;
+                densities[i] = 1.0;
                 continue;
             }
 
@@ -97,7 +97,7 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
 
             int targetHeight = HeightConverter
                 .convertToMinecraftHeight(data.heightmap[localZ][localX]);
-            densities[i] = targetHeight - y;
+            densities[i] = y < targetHeight ? 1.0 : -1.0;
         }
     }
 
@@ -108,12 +108,12 @@ public class TerrainDiffusionDensityFunction implements DensityFunction {
 
     @Override
     public double minValue() {
-        return -64;
+        return -1;
     }
 
     @Override
     public double maxValue() {
-        return 1024;
+        return 1;
     }
 
     @Override
